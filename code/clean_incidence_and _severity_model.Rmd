@@ -18,6 +18,7 @@ library(glmmTMB)
 library(effects)
 library(ggeffects)
 library(DHARMa)
+library(MuMIn)
 
 library(sf)
 
@@ -614,13 +615,13 @@ data_severity %>%
 ```{r}
 
 severity.mod.func <- function(data, 
-                              frml = formula("severity ~ Shade_tree_species*distance   + (1|sample_code/branch)"),
-                              zifrml = formula("~1")){
+                              frml,
+                              zifrml){
  
   mod_severity <-  glmmTMB(formula = frml,
                               ziformula = zifrml,
-                              family = binomial,
-                              weights = total_count ,
+                              family = beta_family(),
+                              #weights = total_count ,
                               data = data)
 
   res_severity <- DHARMa::simulateResiduals(mod_severity, plot = TRUE)
@@ -704,11 +705,13 @@ ggplot(CRBD_leaves_top)+
   geom_point(aes(log_total_count, severity))
 
 CRBD_leaves_top%>%
-  severity.mod.func() -> mod_severity_CRBD_leaves_top
-summary(mod_severity_CRBD_leaves_top)
+  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + (1|sample_code/branch)"),
+                    zifrml = formula("~1")) -> mod_severity_CRBD_leaves_top
+
 CRBD_leaves_top%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety +
-                                            (1|sample_code)")) -> mod_severity_CRBD_leaves_top2
+                                            (1|sample_code)"),
+                    zifrml = formula("~1")) -> mod_severity_CRBD_leaves_top2
 CRBD_leaves_top%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety +
                                             (1|sample_code)"),
@@ -724,15 +727,50 @@ CRBD_leaves_top%>%
 
 
 ```{r}
-CRBD_leaves_top %>%
-  plot.effect.model(mod_severity_CRBD_leaves_top4)
+Anova(mod_severity_CRBD_leaves_top3)
+Anova(mod_severity_CRBD_leaves_top3, component = "zi")
 
-Anova(mod_severity_CRBD_leaves_top4)
-Anova(mod_severity_CRBD_leaves_top4, component = "zi")
+```
+```{r}
+summary(mod_severity_CRBD_leaves_top3)
 
-anova(mod_severity_CRBD_leaves_top3, mod_severity_CRBD_leaves_top4)
-library(MuMIn)
-AICc(mod_severity_CRBD_leaves_top3,mod_severity_CRBD_leaves_top4)
+predict_response(mod_severity_CRBD_leaves_top3, c("distance [all]","Shade_tree_species"), type = "zero_inflated") %>% 
+  as.data.frame %>%
+  mutate(type = "fixed + zif") -> dist_shade_zif
+predict_response(mod_severity_CRBD_leaves_top3, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
+  as.data.frame %>%
+  mutate(type = "fixed") %>%
+  bind_rows(dist_shade_zif) %>%
+  ggplot() +
+  geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, fill = type), alpha= 0.5 )+
+  geom_line(aes(x = x, y = predicted, col = type))+
+  facet_wrap(~group) +
+  scale_y_continuous(limits = c(0,1))+
+  scale_color_simpsons() +
+  scale_fill_simpsons() +
+  main_theme
+
+
+predict_response(mod_severity_CRBD_leaves_top3, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
+  plot
+
+predict_response(mod_severity_CRBD_leaves_top3, c("Coffee_Variety"), type = "zero_inflated") %>%
+  as.data.frame %>%
+  mutate(type = "fixed + zif") -> coffee_var_zif
+predict_response(mod_severity_CRBD_leaves_top3, c("Coffee_Variety"), type = "fixed") %>%
+  as.data.frame %>%
+  mutate(type = "fixed") %>%
+  bind_rows(coffee_var_zif) %>%
+  ggplot() +
+  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, col = type), 
+                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
+  scale_y_continuous(limits = c(0,1))+
+  scale_color_simpsons() +
+  scale_fill_simpsons() +
+  main_theme +
+  labs(x= "Variety", y = "severity") 
+
+
 ```
 
 ### 5.3 CRBD BERRIES severity model
@@ -760,11 +798,13 @@ data_severity_CRBD_berries %>%
   filter(portion =="Top") -> CRBD_berries_top
 
 CRBD_berries_top %>%
-  severity.mod.func -> mod_severity_CRBD_berries_top
+  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + (1|sample_code/branch)"),
+                    zifrml = formula("~1")) -> mod_severity_CRBD_berries_top
 
 CRBD_berries_top %>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety +
-                                            (1|sample_code)")) -> mod_severity_CRBD_berries_top2
+                                            (1|sample_code)"),
+                    zifrml = formula("~1")) -> mod_severity_CRBD_berries_top2
 
 CRBD_berries_top %>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety +
@@ -824,23 +864,8 @@ predict_response(mod_severity_CRBD_berries_top3, c("Coffee_Variety"), type = "fi
   scale_color_simpsons() +
   scale_fill_simpsons() +
   main_theme +
-  labs(x= "Total leaves (log count)", y = "severity") 
+  labs(x= "Variety", y = "severity") 
 
-predict_response(mod_severity_CRBD_berries_top3, c("log_total_count [all]"), type = "zero_inflated") %>%
-  as.data.frame %>%
-  mutate(type = "fixed + zif") -> log_total_count_zif
-predict_response(mod_severity_CRBD_berries_top3, c("log_total_count [all]"), type = "fixed") %>%
-  as.data.frame %>%
-  mutate(type = "fixed") %>%
-  bind_rows(log_total_count_zif) %>%
-  ggplot() +
-  geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, fill = type), alpha= 0.5 )+
-  geom_line(aes(x = x, y = predicted, col = type))+
-  scale_y_continuous(limits = c(0,1))+
-  scale_color_simpsons() +
-  scale_fill_simpsons() +
-  main_theme +
-  labs(x= "Total leaves (log count)", y = "severity") 
 
 ```
 
@@ -861,45 +886,63 @@ data_severity_CWD %>%
   facet_grid(rows = vars(Shade_tree_species), cols = vars(portion))+
   geom_boxplot(aes(Coffee_Variety,severity)) 
 ```
-#### All portion
+
+#### Top
 
 ```{r}
+# Models
 
-glmmTMB(formula = severity ~ Shade_tree_species*distance + portion + log_total_count + Coffee_Variety +
-                                            (1|sample_code/branch),
-                                            ziformula = ~Coffee_Variety,
-                                            family = binomial,
-                                            weights = total_count,
-                                            data = data_severity_CWD) -> mod_severity_CWD
+data_severity_CWD %>%
+  filter(portion =="Top") -> CWD_top
 
-res_severity_CWD <- DHARMa::simulateResiduals(mod_severity_CWD, plot = TRUE)
+CWD_top%>%
+  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance + 
+                                            (1|sample_code)"),
+                    zifrml =  formula("~1")) -> mod_severity_CWD_top
 
+CWD_top%>%
+  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety + 
+                                            (1|sample_code)"),
+                     zifrml =  formula("~1")) -> mod_severity_CWD_top2
+CWD_top%>%
+  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety + 
+                                            (1|sample_code)"),
+                              zifrml = formula("~Coffee_Variety")) -> mod_severity_CWD_top3
 
-testQuantiles(mod_severity_CWD)
-testDispersion(res_severity_CWD)
-testZeroInflation(res_severity_CWD)
-
-model.frame(mod_severity_CWD) -> mod_frame_CWD
-par(mfrow = c(2, 2))
-plotResiduals(res_severity_CWD, form = mod_frame_CWD$portion)
-plotResiduals(res_severity_CWD, form = mod_frame_CWD$distance, quantreg = T)
-plotResiduals(res_severity_CWD, form = mod_frame_CWD$Shade_tree_species)
-plotResiduals(res_severity_CWD, form = mod_frame_CWD$log_total_count, quantreg = T)
-par(mfrow = c(1, 1))
-plotResiduals(res_severity_CWD, form = mod_frame_CWD$Coffee_Variety)
+CWD_top%>%
+  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance  + 
+                                            (1|sample_code)"),
+                              zifrml = formula("~Coffee_Variety")) -> mod_severity_CWD_top4
 ```
-
+```{r}
+MuMIn::AICc(mod_severity_CWD_top,mod_severity_CWD_top2, mod_severity_CWD_top3, mod_severity_CWD_top4)
+```
 
 ```{r}
-plot(allEffects(mod_severity_CWD))
+summary(mod_severity_CWD_top)
 
-Anova(mod_severity_CWD)
-summary(mod_severity_CWD)
-plogis(-1)
-plogis(0)
-plogis(-1.055421-0.902003*(log(100)))
+predict_response(mod_severity_CWD_top, c("distance [all]","Shade_tree_species"), type = "zero_inflated") %>% 
+  as.data.frame %>%
+  mutate(type = "fixed + zif") -> dist_shade_zif
+predict_response(mod_severity_CWD_top, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
+  as.data.frame %>%
+  mutate(type = "fixed") %>%
+  bind_rows(dist_shade_zif) %>%
+  ggplot() +
+  geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, fill = type), alpha= 0.5 )+
+  geom_line(aes(x = x, y = predicted, col = type))+
+  facet_wrap(~group) +
+  scale_y_continuous(limits = c(0,1))+
+  scale_color_simpsons() +
+  scale_fill_simpsons() +
+  main_theme
+
+
+predict_response(mod_severity_CWD_top, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
+  plot
 
 ```
+
 
 ### 5.5 CLR severity model
 
@@ -928,24 +971,22 @@ data_severity_CLR %>%
   filter(portion =="lower") -> CLR_low
 
 CLR_low %>%
-  severity.mod.func-> mod_severity_CLR_low
+ severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance + 
+                                            (1|sample_code/branch)"),
+                    zifrml =  formula("~1")) -> mod_severity_CLR_low
 CLR_low %>%
- severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance  + log_total_count + Coffee_Variety + 
+ severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety + 
                                             (1|sample_code/branch)"),
                               zifrml = formula("~1")) -> mod_severity_CLR_low2
 CLR_low %>%
- severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance  + log_total_count  + Coffee_Variety+
+ severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance    + Coffee_Variety+
                                             (1|sample_code/branch)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_severity_CLR_low3
 CLR_low %>%
- severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance  + log_total_count  + 
+ severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance    + 
                                             (1|sample_code/branch)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_severity_CLR_low4
 
-CLR_low %>%
- severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance  + log_total_count + Coffee_Variety + 
-                                            (1|sample_code/branch)"),
-                              zifrml = formula("~0")) -> mod_severity_CLR_low5
 ```
 
 ```{r}
@@ -955,4 +996,42 @@ CLR_low %>%
 CLR_low %>%
   plot.effect.model(mod_severity_CLR_low5)
 ```
+```{r}
+summary(mod_severity_CLR_low3)
 
+predict_response(mod_severity_CLR_low3, c("distance [all]","Shade_tree_species"), type = "zero_inflated") %>% 
+  as.data.frame %>%
+  mutate(type = "fixed + zif") -> dist_shade_zif
+predict_response(mod_severity_CLR_low3, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
+  as.data.frame %>%
+  mutate(type = "fixed") %>%
+  bind_rows(dist_shade_zif) %>%
+  ggplot() +
+  geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, fill = type), alpha= 0.5 )+
+  geom_line(aes(x = x, y = predicted, col = type))+
+  facet_wrap(~group) +
+  scale_y_continuous(limits = c(0,1))+
+  scale_color_simpsons() +
+  scale_fill_simpsons() +
+  main_theme
+
+
+predict_response(mod_severity_CLR_low3, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
+  plot
+
+predict_response(mod_severity_CLR_low3, c("Coffee_Variety"), type = "zero_inflated") %>%
+  as.data.frame %>%
+  mutate(type = "fixed + zif") -> coffee_var_zif
+predict_response(mod_severity_CLR_low3, c("Coffee_Variety"), type = "fixed") %>%
+  as.data.frame %>%
+  mutate(type = "fixed") %>%
+  bind_rows(coffee_var_zif) %>%
+  ggplot() +
+  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, col = type), 
+                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
+  scale_y_continuous(limits = c(0,1))+
+  scale_color_simpsons() +
+  scale_fill_simpsons() +
+  main_theme +
+  labs(x= "Variety", y = "severity") 
+```
