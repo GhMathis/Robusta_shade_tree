@@ -1,0 +1,199 @@
+---
+title: "Shade tree results"
+output:
+  pdf_document:
+    toc: true
+  word_document:
+    toc: true
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: tango
+    df_print: paged
+date: "2025-01-08"
+linestretch: 1.5
+fontsize: 12pt
+---
+
+# Shade tree influence on incidence and severity
+
+
+## Disease correlation
+
+![Correlation of severity between the 3 disease](figures/correlation_disease.png)
+No correlation when we consider 0
+
+![Correlation of severity between the 3 disease](figures/correlation_disease_without_0.png)
+
+-----
+
+## CRBD
+
+### Incidence
+
+Adding coffee variety to the following model lead to convergence problem
+
+(1) **glmmTMB(formula = true_incidence \~ Shade_tree_species\*distance , \# + Coffee_Variety (don't work) family = binomial, data = binary_data_CRBD)**
+
+|                             | Chisq |  Df | Pr(\>Chisq) |
+|:----------------------------|------:|----:|------------:|
+| Shade_tree_species          |  4.38 |   3 |        0.22 |
+| distance                    |  0.03 |   1 |        0.86 |
+| Shade_tree_species:distance |  0.51 |   3 |        0.92 |
+
+**Table : Anova output from model 1**
+
+No sigificant effect of shade tree, distance an interaction 
+
+Model with coffee variety alone
+
+(2) **glmmTMB(formula = true_incidence ~ Coffee_Variety, family = binomial)**
+                              
+|               | Chisq| Df| Pr(>Chisq)|
+|:--------------|-----:|--:|----------:|
+|Coffee_Variety |  3.68|  7|       0.82|
+
+**Table : Anova output from model 2**
+
+No significant effect
+
+![Incidence proportion of CRBD for each coffee variety](figures/Incidence_per_variety_CRBD.png)
+
+![Predicted Incidence proportion of CRBD for each coffee variety](figures/predicted_incidence_CRBD.png)
+
+### Severity on top portion
+
+(3) **glmmTMB(formula = severity \~ Shade_tree_species\*distance + Coffee_Variety + (1\|sample_code), zifrml = \~Coffee_Variety, family = beta_family)**
+
+
+|                             | Chisq |  Df | Pr(\>Chisq) |
+|:----------------------------|------:|----:|------------:|
+| Shade_tree_species          |  1.55 |   3 |        0.67 |
+| distance                    |  0.33 |   1 |        0.56 |
+| Coffee_Variety              | 10.15 |   7 |        0.18 |
+| Shade_tree_species:distance |  3.74 |   3 |        0.29 |
+
+**Table : Anova output from model 3 Fixed effect****
+
+|               |    Chisq| Df| Pr(>Chisq)|
+|:--------------|--------:|--:|----------:|
+|Coffee_Variety | 150.6472|  7|          0|
+
+**Table : Anova output from model 3 Zero inflation effect**
+
+effect of zero inflation term with coffee variety. In other word coffee variety has an effect on the occurrence of CRBD at the branch level
+
+![Estimated severity per coffee variety](figures/variety_severity_CRBD.png)
+![Estimated severity against distance from shade tree](figures/CRBD_distance.png)
+No effect of distance or shade tree
+
+-----
+
+## CWD
+
+### Incidence
+
+(4) **glmmTMB(formula = true_incidence ~ Shade_tree_species \* distance + Coffee_Variety,family = binomial)**
+                              
+|                            | LR Chisq| Df| Pr(>Chisq)|
+|:---------------------------|--------:|--:|----------:|
+|Shade_tree_species          |     0.41|  3|       0.94|
+|distance                    |     0.94|  1|       0.33|
+|Coffee_Variety              |    13.66|  7|       0.06|
+|Shade_tree_species:distance |     5.49|  3|       0.14|
+
+**Table : Anova output from model 4**
+
+
+Tendency of coffee variety on incidence of CWD. let's make a postHoc test to see if there is an effect.
+
+![Incidence proportion of CWD for each coffee variety](figures/Incidence_per_variety_CWD.png)
+
+![Estimated Incidence proportion of CWD for each coffee variety](figures/predicted_incidence_CWD.png)
+No effect of coffee variety
+
+### Severity
+
+
+|                          |     df |         AICc |
+|:-------------------------|-------:|-------------:|
+| **mod_severity_CWD_top** | **11** | **525.4537** |
+| mod_severity_CWD_top2    |     18 |     531.4835 |
+| mod_severity_CWD_top3    |     25 |     533.3242 |
+| mod_severity_CWD_top4    |     18 |     527.0776 |
+
+**Table : All model (not shown) of severity for CWD have good residual. AICc to select one.**
+
+Following model selected :
+(5) **glmmTMB(formula = severity \~ Shade_tree_species\*distance + (1\|sample_code), family = beta_family)**
+
+|                             | Chisq |  Df | Pr(\>Chisq) |
+|:----------------------------|------:|----:|------------:|
+| Shade_tree_species          |  5.33 |   3 |        0.15 |
+| distance                    |  1.20 |   1 |        0.27 |
+| Shade_tree_species:distance |  2.31 |   3 |        0.51 |
+
+**Table : Anova output from model 5**
+
+no effect
+
+![Estimated severity against distance from shade tree](figures/CWD_severity_distance.png)
+
+-----
+
+## CLR
+
+### Incidence
+
+(6) **glmmTMB(formula = true_incidence \~ Shade_tree_species\*distance , \# + Coffee_Variety (don't work) family = binomial, data = binary_data_CRBD)**
+
+
+|                            | Chisq| Df| Pr(>Chisq)|
+|:---------------------------|-----:|--:|----------:|
+|Shade_tree_species          |  7.58|  3|       0.06|
+|distance                    |  0.01|  1|       0.91|
+|Shade_tree_species:distance |  0.57|  3|       0.90|
+
+**Table : Anova output from model 6**
+
+no effect
+
+(7) **glmmTMB(formula = true_incidence \~ Shade_tree_species\*distance , \# + Coffee_Variety (don't work) family = binomial, data = binary_data_CRBD)**
+
+|               | Chisq| Df| Pr(>Chisq)|
+|:--------------|-----:|--:|----------:|
+|Coffee_Variety |  2.71|  7|       0.91|
+
+**Table : Anova output from model 7**
+
+no effect
+
+![Incidence proportion of CWD for each coffee variety](figures/Incidence_per_variety_CLR.png)
+
+![Estimated Incidence proportion of CWD for each coffee variety](figures/predicted_incidence_CLR.png)
+
+
+### Severity
+
+(8) **glmmTMB(formula = severity \~ Shade_tree_species\*distance + Coffee_Variety + (1\|sample_code), zifrml = \~Coffee_Variety, family = beta_family)**
+
+|                            | Chisq| Df| Pr(>Chisq)|
+|:---------------------------|-----:|--:|----------:|
+|Shade_tree_species          |  0.75|  3|       0.86|
+|distance                    |  4.25|  1|       0.0393 *|
+|Coffee_Variety              | 43.80|  7|2.333e-07 ***|
+|Shade_tree_species:distance |  3.26|  3|       0.35|
+
+**Table : Anova output from model 8**
+
+Significant effect of distance from shade tree and Coffee variety on the severity of CLR.
+
+I'm doing a postHoc test of coffe variety (pairwise comp)
+![Estimated severity proportion of CWD for each coffee variety](figures/variety_severity_CLR.png)
+
+![Estimated severity aigeinst dsitance from shade tree](figures/CLR_dist_severity.png)
+
+
+Effect size of around 5% decrease of severity for coffee tree at 20m compare to those at 0 
