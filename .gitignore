@@ -9,3 +9,8 @@
 *.txt
 *.csv
 *.zip
+data/*
+*.html
+*.docx
+*.tex
+*.png
