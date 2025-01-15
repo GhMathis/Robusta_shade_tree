@@ -1,10 +1,6 @@
 ---
 title: "Shade tree results"
 output:
-  pdf_document:
-    toc: true
-  word_document:
-    toc: true
   html_document:
     toc: true
     toc_float: true
@@ -12,6 +8,10 @@ output:
     theme: cerulean
     highlight: tango
     df_print: paged
+  word_document:
+    toc: true
+  pdf_document:
+    toc: true
 date: "2025-01-08"
 linestretch: 1.5
 fontsize: 12pt
@@ -137,7 +137,7 @@ Following model selected :
 
 **Table : Anova output from model 5**
 
-no effect
+Forno effect
 
 ![Estimated severity against distance from shade tree](figures/CWD_severity_distance.png)
 
@@ -172,7 +172,7 @@ no effect
 
 ![Incidence proportion of CWD for each coffee variety](figures/Incidence_per_variety_CLR.png)
 
-![Estimated Incidence proportion of CWD for each coffee variety](figures/predicted_incidence_CLR.png)
+![Estimated Incidence proportion of CLR for each coffee variety](figures/predicted_incidence_CLR.png)
 
 
 ### Severity
@@ -191,7 +191,7 @@ no effect
 Significant effect of distance from shade tree and Coffee variety on the severity of CLR.
 
 I'm doing a postHoc test of coffe variety (pairwise comp)
-![Estimated severity proportion of CWD for each coffee variety](figures/variety_severity_CLR.png)
+![Estimated severity proportion of CLR for each coffee variety](figures/variety_severity_CLR.png)
 
 ![Estimated severity aigeinst dsitance from shade tree](figures/CLR_dist_severity.png)
 

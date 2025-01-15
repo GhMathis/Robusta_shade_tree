@@ -1,0 +1,339 @@
+---
+title: "coffee_yield_analysis"
+output: html_document
+date: "2025-01-14"
+editor_options: 
+  chunk_output_type: inline
+---
+
+## 1 Load Packages
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(ggsci)
+
+library(car)
+library(glmmTMB)
+library(effects)
+library(emmeans)
+library(ggeffects)
+library(DHARMa)
+
+library(sf)
+
+main_theme = theme_minimal()+
+  theme(line = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        panel.border = element_blank(),
+        axis.ticks =  element_line(colour = "black"),
+        axis.text.x = element_text(colour = "black", size=22, face="italic", angle = 45, vjust = 1, hjust = 1),
+        axis.text.y = element_text(colour = "black", size=22, face="italic"),
+        legend.title = element_text(colour = "black", size=20,
+                                    hjust =0.5),
+
+        legend.text = element_text(colour = "black", size=18),
+        axis.title= element_text(size=28),
+        strip.text = element_text(colour = "black", size=15, face ="italic"))
+
+convert_dms_to_dd <- function(dms) {
+  if(is.na(dms)){
+    return(NA)
+  }
+  if(str_detect(dms, "^\\d+$")){
+    return(NA)
+  } else{
+  dms <- str_replace_all(dms, "[°′″’']", " ") # Replace degree, minute, and second symbols with spaces
+  dms_split <- str_split(dms, "\\s+")[[1]]  # Split the string into components
+  degrees <- as.numeric(dms_split[1])
+  minutes <- as.numeric(dms_split[2])
+  seconds <- as.numeric(dms_split[3])
+  direction <- dms_split[4]
+  
+  # Calculate decimal degrees
+  decimal_degrees <- degrees + minutes / 60 + seconds / 3600
+  if (direction %in% c("S", "W")) {
+    decimal_degrees <- -decimal_degrees
+  }
+  return(decimal_degrees)
+  }
+}
+
+```
+
+## 2 Arrange data to long format
+
+```{r}
+data <- read_xlsx("data/R_PhD_Data_corrected.xlsx")
+data %>% filter(is.na(Shade_tree_Canopy_Cover))
+data %>%
+  rename(sample_code = "Coffee_soil _sample_CODE") %>%
+  mutate(sample_code = paste(sample_code,
+                             str_extract(Section_of_Kaweri, "^[a-zA-Z]{4}"), sep = "_"),
+         Shade_tree_soil_sample_CODE = paste(Shade_tree_soil_sample_CODE,
+                             str_extract(Section_of_Kaweri, "^[a-zA-Z]{4}"), sep = "_")) -> data
+
+
+
+data %>%
+  select(Shade_tree_species, Section_of_Kaweri, sample_code, Coffee_Variety,
+         Actual_distance_from_shade_tree_m, Shade_tree_Canopy_Cover, Shade_tree_soil_sample_CODE,
+         Longitude, Latitude) %>% 
+  mutate(Coffee_Variety = case_when(is.na(Coffee_Variety) ~"unknown_var",
+                                    .default = Coffee_Variety)) %>%
+  ## A little trick to remove na from Shade_tree_Canopy_Cover
+  group_by(Shade_tree_soil_sample_CODE) %>%
+  mutate(Shade_tree_Canopy_Cover = mean(Shade_tree_Canopy_Cover, na.rm = T),
+          Longitude = ifelse(is.na(Longitude), first(na.omit(Longitude)), Longitude),
+          Latitude = ifelse(is.na(Latitude), first(na.omit(Latitude)), Latitude),
+          Longitude_dd = ifelse(!is.na(Longitude), sapply(Longitude, convert_dms_to_dd), NA),
+          Latitude_dd = ifelse(!is.na(Latitude), sapply(Latitude, convert_dms_to_dd), NA),
+          Coffee_Variety = as.factor(Coffee_Variety),
+          Shade_tree_species = as.factor(Shade_tree_species),
+          distance_class = cut(
+          Actual_distance_from_shade_tree_m,
+          breaks = c(0, 8, 16, 24),  # Specify the breakpoints
+          labels = c("[0-8]", "(8-16]", "(16-22]"),  # Labels for each range
+          right = F) # Indicates whether intervals are right-closed
+              ) %>%
+  
+  ungroup() -> covariate_data
+
+```
+
+```{r}
+### Isolate total cont of leaves or berries per branch
+data %>%
+  select(sample_code, starts_with("No_berries"),  starts_with("No_leaves")) %>%
+  pivot_longer(-sample_code, names_to = "sample_type", values_to = "total_count") %>%
+  mutate(
+    # Extracting "organ" ("berries" or "leaves")
+    organ = str_extract(sample_type, "(?<=_)berries|leaves"),
+    
+    # Extracting "portion"
+    portion = str_extract(sample_type, "(?<=_)lower|Top|middle"),
+    
+    # Extracting "branch" (e.g., "1st", "2nd", "3rd", "4th")
+    branch = str_extract(sample_type, "\\d+(st|nd|rd|th)")
+   ) %>%
+  select(-sample_type) %>%
+   mutate(total_count = case_when(total_count > 250 ~ round(total_count/10),
+                            .default = total_count)) %>% # correct error (5 branch have more than 150 leaves -> error due to one digit added when tipping)
+  pivot_wider(names_from = organ, values_from = total_count )-> total_number_of_leaves_or_berries
+
+### Isolate total count of leaves or berries infected per branchs
+
+data %>%
+  select(sample_code, starts_with("No"),  -starts_with("No_berries"),  -starts_with("No_leaves")) %>% # extract the total number of leaves/berries and the number of leaves/berries infected
+  pivot_longer(-sample_code, names_to = "sample_type", values_to = "infected_count") %>%
+  mutate(
+     # Extracting "disease" (e.g., "CWD", "CLR", "CRBD")
+    disease = str_extract(sample_type, "(?<=_)[A-Z]+"),
+    
+    # Extracting "organ" ("berries" or "leaves")
+    organ = str_extract(sample_type, "(?<=_)berries|leaves"),
+    
+    # Extracting "portion"
+    portion = str_extract(sample_type, "(?<=_)lower|Top|middle"),
+    
+    # Extracting "branch" (e.g., "1st", "2nd", "3rd", "4th")
+    branch = str_extract(sample_type, "\\d+(st|nd|rd|th)")
+   ) %>%
+  select(-sample_type) %>%
+  pivot_wider(names_from = c(disease,organ), values_from = infected_count  ) -> number_of_infected_leaves_or_berries
+
+
+## Merge data and compute serverity per branchs
+number_of_infected_leaves_or_berries %>%
+  left_join(total_number_of_leaves_or_berries, by = join_by("sample_code" == "sample_code",
+                                                            "branch" == "branch",
+                                                            "portion" == "portion")) %>%
+  mutate(leaves = case_when(is.na(leaves) ~ 0,
+                           .default = leaves),
+         berries = case_when(is.na(berries) ~ 0,
+                           .default = berries))%>%
+  # mutate(CWD_leaves = CWD_leaves/leaves,
+  #        CLR_leaves = CLR_leaves/leaves,
+  #        CRBD_leaves = CRBD_leaves/leaves,
+  #        CRBD_berries = CRBD_berries/berries) %>%
+  pivot_longer(c(CWD_leaves, CLR_leaves, CRBD_leaves, CRBD_berries)) %>%
+  mutate(value = case_when(is.na(value) ~ 0,
+                           .default = value))%>%
+  pivot_wider(names_from = name, values_from = value) %>%
+  mutate(CRBD_berries_bin = as.factor(case_when(CRBD_berries == 0~ 0,
+                                      CRBD_berries > 0 ~ 1))) %>%
+  left_join(covariate_data, by = "sample_code") %>%
+  mutate(Shade_tree_species = as.factor(Shade_tree_species)) %>%
+  rename(distance = "Actual_distance_from_shade_tree_m")%>%
+  mutate(berries = as.integer(berries),
+         leaves = as.integer(leaves)) -> data_yield
+
+```
+
+## Yields model exploration
+
+```{r}
+
+yield.mod.func <- function(data, 
+                              frml,
+                              fam = gaussian(),
+                              zifrml = "~0",
+                              dispfrml = "~1"){
+ 
+  mod_yield <-  glmmTMB(formula = formula(frml),
+                              family = fam,
+                              ziformula = formula(zifrml),
+                              dispformula = formula(dispfrml),
+                              data = data)
+  
+  res_yeilds <- DHARMa::simulateResiduals(mod_yield, plot = F)
+  plot(res_yeilds, quantreg = T)
+  par(mfrow = c(1, 2))
+  testDispersion(res_yeilds)
+  testZeroInflation(res_yeilds)
+
+  par(mfrow = c(2, 3))
+
+  plotResiduals(res_yeilds, form = data$distance_class)
+  plotResiduals(res_yeilds, form = data$distance, quantreg = T)
+  plotResiduals(res_yeilds, form = data$Shade_tree_species)
+  plotResiduals(res_yeilds, form = data$Coffee_Variety)
+  plotResiduals(res_yeilds, form = data$Section_of_Kaweri)
+  plotResiduals(res_yeilds, form = data$portion)
+  
+  par(mfrow = c(2, 2))
+  
+  plotResiduals(res_yeilds, form = data$CWD_leaves, quantreg = T)
+  plotResiduals(res_yeilds, form = data$CLR_leaves, quantreg = T)
+  plotResiduals(res_yeilds, form = data$CRBD_leaves, quantreg = T)
+  plotResiduals(res_yeilds, form = data$CRBD_berries, quantreg = T)
+  return(mod_yield)
+}
+```
+
+## Berrie yield
+
+```{r}
+
+
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety",
+                              fam = nbinom1) -> mod_yield1
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves",
+                              fam = nbinom1)-> mod_yield2
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety + Section_of_Kaweri",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves",
+                              fam = nbinom1) -> mod_yield3 # section of kawerin seems correlated with shade tre
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety   + Section_of_Kaweri",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves",
+                              fam = nbinom1) -> mod_yield4
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety + Section_of_Kaweri + CLR_leaves",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves",
+                              fam = nbinom1) -> mod_yield5
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety + Section_of_Kaweri  + portion",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves ",
+                              fam = nbinom1) -> mod_yield6
+
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety + Section_of_Kaweri + CLR_leaves + portion + distance",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves ",
+                              fam = nbinom1) -> mod_yield7
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety + Section_of_Kaweri + CLR_leaves + portion + distance + log1p(CRBD_berries)  ",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries_bin",
+                 dispfrml = "~CRBD_berries",
+                              fam = truncated_nbinom2)  -> mod_yield8
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety + Section_of_Kaweri + CLR_leaves + portion + distance + log1p(CRBD_berries)  ",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries_bin + Section_of_Kaweri",
+                 dispfrml = "~CRBD_berries",
+                              fam = truncated_nbinom2)  -> mod_yield9
+
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety + Section_of_Kaweri + CLR_leaves + portion + log1p(CRBD_berries)  ",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries_bin + Section_of_Kaweri",
+                 dispfrml = "~CRBD_berries + distance_class + CRBD_leaves",
+                              fam = truncated_nbinom2)  -> mod_yield10
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety  + CLR_leaves + portion + log1p(CRBD_berries)  ",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries_bin + Section_of_Kaweri",
+                 dispfrml = "~CRBD_berries + distance_class + CRBD_leaves",
+                              fam = truncated_nbinom2)  -> mod_yield11
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety  + CLR_leaves + portion + log1p(CRBD_berries)  ",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries_bin + Section_of_Kaweri",
+                 dispfrml = "~CRBD_berries + distance_class",
+                              fam = truncated_nbinom2)  -> mod_yield11_bis
+data_yield %>%
+  yield.mod.func(frml = "berries ~ Coffee_Variety  + CLR_leaves + portion + log1p(CRBD_berries)  ",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries_bin + Section_of_Kaweri",
+                 dispfrml = "~CRBD_berries + distance_class + CRBD_leaves + Section_of_Kaweri",
+                              fam = truncated_nbinom2)  -> mod_yield12
+```
+```{r}
+Anova(mod_yield11_bis)
+
+Anova(mod_yield11_bis,component = "zi")
+
+Anova(mod_yield11_bis,component = "disp")
+```
+```{r}
+### Pairwise comparison variety
+pwc_berries <- emmeans(mod_yield11_bis, ~Coffee_Variety, component = 'response')
+summary(pwc_berries)
+
+pairs(pwc_berries)
+multcomp::cld(pwc_berries, Letter = "abcdefg") %>%
+  as.data.frame() %>%
+  dplyr::select(Coffee_Variety, .group) -> compl_letter 
+
+### Variety
+predict_response(mod_yield11_bis, c("Coffee_Variety"), type  ="fixed", margin = "marginalmeans") %>%
+  as.data.frame %>%
+  left_join(compl_letter, by = join_by(x == Coffee_Variety)) %>%
+  ggplot() +
+  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high,), 
+                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
+  geom_text(aes(label = .group, x = x, y = max(conf.high) +1), size = 5, vjust = 0) +
+  scale_y_continuous(limits = c(0,90))+
+  main_theme +
+  labs(x= "Variety", y = "Number of berries") 
+
+### Portion
+predict_response(mod_yield11_bis, c("portion"), type  ="fixed", margin = "marginalmeans") %>%
+  as.data.frame %>%
+  ggplot() +
+  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high,), 
+                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
+  main_theme +
+  labs(x= "Portion", y = "Number of berries") 
+
+### CRBD_berries
+predict_response(mod_yield11_bis, c("CRBD_berries"), type = "fixed") %>%
+  as.data.frame %>%
+  ggplot() +
+  geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high), alpha= 0.5) +
+  geom_line(aes(x = x, y = predicted)) +
+  #scale_y_continuous(limits = c(0,0.5)) +
+  labs(x = "nb. of berries infected by CRBD", y= "Number of berries") +
+  main_theme
+
+### CLR leaves
+summary(mod_yield11_bis)
+predict_response(mod_yield11_bis, c("CLR_leaves[all]"), type = "fixed",margin = "marginalmeans") %>%
+  as.data.frame %>%
+  ggplot() +
+  geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high), alpha= 0.5) +
+  geom_line(aes(x = x, y = predicted)) +
+  #scale_y_continuous(limits = c(0,0.5)) +
+  labs(x = "nb. of leaves infected by CLR", y= "Number of berries") +
+  main_theme
+
+```
+
+

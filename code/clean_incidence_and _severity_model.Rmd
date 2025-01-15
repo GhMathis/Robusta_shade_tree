@@ -4,7 +4,7 @@ author: "Mathis Gheno"
 date: "2024-12-05"
 output: html_document
 editor_options: 
-  chunk_output_type: console
+  chunk_output_type: inline
 ---
 
 ## 1 Load Packages
@@ -582,6 +582,11 @@ plot.effect.model <- function(data, model){
 
 ### 5.2 CRBD LEAVES severity model
 
+```{r}
+data_severity %>%
+  filter(disease == "CRBD", organ =="leaves") -> data_severity_CRBD_leaves
+```
+
 #### Top portion
 
 ```{r}
@@ -592,20 +597,22 @@ ggplot(CRBD_leaves_top)+
   facet_wrap(~Coffee_Variety)+
   geom_point(aes(log_total_count, severity))
 
+CRBD_leaves_top %>%
+  mutate(Shade_tree_Canopy_Cover = scale(Shade_tree_Canopy_Cover)) -> CRBD_leaves_top
 CRBD_leaves_top%>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + (1|sample_code)"),
+  severity.mod.func(frml = formula("severity ~ Shade_tree_Canopy_Cover*distance   + (1|sample_code)"),
                     zifrml = formula("~1")) -> mod_severity_CRBD_leaves_top
 
 CRBD_leaves_top%>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety +
+  severity.mod.func(frml = formula("severity ~ Shade_tree_Canopy_Cover*distance   + Coffee_Variety +
                                             (1|sample_code)"),
                     zifrml = formula("~1")) -> mod_severity_CRBD_leaves_top2
 CRBD_leaves_top%>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety +
+  severity.mod.func(frml = formula("severity ~ Shade_tree_Canopy_Cover*distance   + Coffee_Variety +
                                             (1|sample_code)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_severity_CRBD_leaves_top3
 CRBD_leaves_top%>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   +
+  severity.mod.func(frml = formula("severity ~ Shade_tree_Canopy_Cover*distance   +
                                             (1|sample_code)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_severity_CRBD_leaves_top4
 
@@ -718,28 +725,44 @@ data_severity_CRBD_berries%>%
 data_severity_CRBD_berries %>%
   filter(portion =="Top") -> CRBD_berries_top
 
+####
 CRBD_berries_top %>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + (1|sample_code/branch)"),
+  mutate(Shade_tree_Canopy_Cover = scale(Shade_tree_Canopy_Cover)) -> CRBD_berries_top
+
+CRBD_berries_top %>%
+  ggplot() +
+  geom_boxplot(aes(Shade_tree_species, Shade_tree_Canopy_Cover))
+
+
+lm_test <- aov(Shade_tree_Canopy_Cover~Shade_tree_species , data = CRBD_berries_top)
+plot(lm_test)
+summary(lm_test)
+TukeyHSD(lm_test)
+####
+
+
+CRBD_berries_top %>%
+  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance +Section_of_Kaweri  + (1|sample_code)"),
                     zifrml = formula("~1")) -> mod_severity_CRBD_berries_top
 
 CRBD_berries_top %>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety +
+  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety +Section_of_Kaweri+
                                             (1|sample_code)"),
                     zifrml = formula("~1")) -> mod_severity_CRBD_berries_top2
 
 CRBD_berries_top %>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety +
+  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety + 
                                             (1|sample_code)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_severity_CRBD_berries_top3
 
 CRBD_berries_top %>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   +
+  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Section_of_Kaweri+
                                             (1|sample_code)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_severity_CRBD_berries_top4
 
 
-res_severity_temp <- DHARMa::simulateResiduals(mod_severity_CRBD_berries_top4, plot = TRUE)
-plotResiduals(res_severity_temp, form = CRBD_berries_top$Section_of_Kaweri)
+res_severity_temp <- DHARMa::simulateResiduals(mod_severity_CRBD_berries_top3, plot = TRUE)
+plotResiduals(res_severity_temp, form = CRBD_berries_top$Shade_tree_Canopy_Cover)
 ```
 
 
@@ -851,21 +874,11 @@ predict_response(mod_severity_CWD_top, c("distance[all]"), type = "fixed") %>%
 ```{r}
 summary(mod_severity_CWD_top)
 
+
+
 predict_response(mod_severity_CWD_top, c("distance [all]","Shade_tree_species"), type = "zero_inflated") %>% 
   as.data.frame %>%
   mutate(type = "fixed + zif") -> dist_shade_zif
-predict_response(mod_severity_CWD_top, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
-  as.data.frame %>%
-  mutate(type = "fixed") %>%
-  bind_rows(dist_shade_zif) %>%
-  ggplot() +
-  geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, fill = type), alpha= 0.5 )+
-  geom_line(aes(x = x, y = predicted, col = type))+
-  facet_wrap(~group) +
-  scale_y_continuous(limits = c(0,1))+
-  scale_color_simpsons() +
-  scale_fill_simpsons() +
-  main_theme
 
 
 predict_response(mod_severity_CWD_top, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
@@ -879,6 +892,9 @@ predict_response(mod_severity_CWD_top, c("distance [all]","Shade_tree_species"),
 data_severity %>%
   filter(disease == "CLR") -> data_severity_CLR
 
+
+CWD_top %>%
+  mutate(Shade_tree_Canopy_Cover = scale(Shade_tree_Canopy_Cover)) -> CWD_top
 
 data_severity_CLR %>%
   ggplot()+
@@ -900,34 +916,55 @@ data_severity_CLR %>%
 
 CLR_low %>%
  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance + 
-                                            (1|sample_code)"),
+                                            (1|Section_of_Kaweri/sample_code)"),
                     zifrml =  formula("~1")) -> mod_severity_CLR_low
 CLR_low %>%
  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety + 
-                                            (1|sample_code)"),
+                                            (1|Section_of_Kaweri/sample_code)"),
                               zifrml = formula("~1")) -> mod_severity_CLR_low2
 CLR_low %>%
  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance    + Coffee_Variety+
-                                            (1|sample_code)"),
+                                            (1|Section_of_Kaweri/sample_code)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_severity_CLR_low3
 CLR_low %>%
  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance    + 
-                                            (1|sample_code)"),
+                                            (1|Section_of_Kaweri/sample_code)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_severity_CLR_low4
 
 
-res_severity_temp <- DHARMa::simulateResiduals(mod_severity_CLR_low3, plot = TRUE)
+CLR_low %>%
+  mutate(Shade_tree_Canopy_Cover = scale(Shade_tree_Canopy_Cover)) -> CLR_low
+
+CLR_low %>%
+ severity.mod.func(frml = formula("severity ~ Shade_tree_Canopy_Cover*distance + 
+                                            (1|Section_of_Kaweri/sample_code)"),
+                    zifrml =  formula("~1")) -> mod_severity_CLR_low_cover
+CLR_low %>%
+ severity.mod.func(frml = formula("severity ~ Shade_tree_Canopy_Cover*distance   + Coffee_Variety + 
+                                            (1|Section_of_Kaweri/sample_code)"),
+                              zifrml = formula("~1")) -> mod_severity_CLR_low2_cover
+CLR_low %>%
+ severity.mod.func(frml = formula("severity ~ Shade_tree_Canopy_Cover*distance    + Coffee_Variety+
+                                            (1|Section_of_Kaweri/sample_code)"),
+                              zifrml = formula("~Coffee_Variety")) -> mod_severity_CLR_low3_cover
+CLR_low %>%
+ severity.mod.func(frml = formula("severity ~ Shade_tree_Canopy_Cover*distance    + 
+                                            (1|Section_of_Kaweri/sample_code)"),
+                              zifrml = formula("~Coffee_Variety")) -> mod_severity_CLR_low4_cover
+AIC(mod_severity_CLR_low3_cover, mod_severity_CLR_low3)
 ```
 
 
 ```{r}
 
 # Anova
-Anova(mod_severity_CLR_low3) %>%
+Anova(mod_severity_CLR_low3_cover) %>%
   round(2) %>%
   knitr::kable()
-
-summary(mod_severity_CLR_low3)
+Anova(mod_severity_CLR_low3_cover,component = "zi") %>%
+  round(2) %>%
+  knitr::kable()
+summary(mod_severity_CLR_low3_cover)
 
 ### Pairwise comparison variety
 pwc_CLR <- emmeans(mod_severity_CLR_low3, ~Coffee_Variety, component = 'response')
