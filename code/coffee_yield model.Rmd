@@ -169,7 +169,19 @@ number_of_infected_leaves_or_berries %>%
 
 ```
 
+```{r}
+data_yield %>%
+  ggplot() +
+   geom_boxplot(aes(Section_of_Kaweri, distance))
+```
+
 ## Yields model exploration
+
+
+
+## Berrie yield
+
+### With disease count
 
 ```{r}
 
@@ -210,11 +222,7 @@ yield.mod.func <- function(data,
 }
 ```
 
-## Berrie yield
-
 ```{r}
-
-
 data_yield %>%
   yield.mod.func(frml = "berries ~ Coffee_Variety",
                               fam = nbinom1) -> mod_yield1
@@ -245,36 +253,237 @@ data_yield %>%
                               fam = nbinom1) -> mod_yield7
 data_yield %>%
   yield.mod.func(frml = "berries ~ Coffee_Variety + Section_of_Kaweri + CLR_leaves + portion + distance + log1p(CRBD_berries)  ",
-                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries_bin",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries",
                  dispfrml = "~CRBD_berries",
                               fam = truncated_nbinom2)  -> mod_yield8
 data_yield %>%
   yield.mod.func(frml = "berries ~ Coffee_Variety + Section_of_Kaweri + CLR_leaves + portion + distance + log1p(CRBD_berries)  ",
-                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries_bin + Section_of_Kaweri",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries + Section_of_Kaweri",
                  dispfrml = "~CRBD_berries",
                               fam = truncated_nbinom2)  -> mod_yield9
 
 data_yield %>%
   yield.mod.func(frml = "berries ~ Coffee_Variety + Section_of_Kaweri + CLR_leaves + portion + log1p(CRBD_berries)  ",
-                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries_bin + Section_of_Kaweri",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries + Section_of_Kaweri",
                  dispfrml = "~CRBD_berries + distance_class + CRBD_leaves",
                               fam = truncated_nbinom2)  -> mod_yield10
 data_yield %>%
   yield.mod.func(frml = "berries ~ Coffee_Variety  + CLR_leaves + portion + log1p(CRBD_berries)  ",
-                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries_bin + Section_of_Kaweri",
-                 dispfrml = "~CRBD_berries + distance_class + CRBD_leaves",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries + Section_of_Kaweri",
+                 dispfrml = "~CRBD_berries + distance_class * CRBD_leaves",
                               fam = truncated_nbinom2)  -> mod_yield11
 data_yield %>%
   yield.mod.func(frml = "berries ~ Coffee_Variety  + CLR_leaves + portion + log1p(CRBD_berries)  ",
-                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries_bin + Section_of_Kaweri",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries + Section_of_Kaweri",
                  dispfrml = "~CRBD_berries + distance_class",
                               fam = truncated_nbinom2)  -> mod_yield11_bis
 data_yield %>%
   yield.mod.func(frml = "berries ~ Coffee_Variety  + CLR_leaves + portion + log1p(CRBD_berries)  ",
-                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries_bin + Section_of_Kaweri",
+                 zifrml = "~ CLR_leaves + CRBD_leaves + CWD_leaves + CRBD_berries + Section_of_Kaweri",
                  dispfrml = "~CRBD_berries + distance_class + CRBD_leaves + Section_of_Kaweri",
                               fam = truncated_nbinom2)  -> mod_yield12
 ```
+
+
+
+```{r}
+data_yield %>%
+  yield.mod.func(frml = "berries ~ log1p(CRBD_berries) ",
+                 zifrml = "~ 1",
+                 dispfrml = "~CRBD_berries + distance_class * CRBD_leaves",
+                              fam = truncated_nbinom2)  -> mod_test
+
+data_yield %>%
+  yield.mod.func(frml = "berries ~ log1p(CRBD_berries) ",
+                 zifrml = "~ CRBD_berries",
+                 dispfrml = "~CRBD_berries + distance_class * CRBD_leaves",
+                              fam = truncated_nbinom2)  -> mod_test2
+
+data_yield %>%
+  yield.mod.func(frml = "berries ~ log1p(CRBD_berries) ",
+                 zifrml = "~ CRBD_berries + CLR_leaves + CRBD_leaves + CWD_leaves",
+                 dispfrml = "~CRBD_berries + distance_class * CRBD_leaves",
+                              fam = truncated_nbinom2)  -> mod_test3
+data_yield %>%
+  yield.mod.func(frml = "berries ~ log1p(CRBD_berries) + portion",
+                 zifrml = "~ CRBD_berries ",
+                 dispfrml = "~CRBD_berries + distance_class * CRBD_leaves",
+                              fam = truncated_nbinom2)  -> mod_test4
+
+data_yield %>%
+  yield.mod.func(frml = "berries ~ log1p(CRBD_berries) +Coffee_Variety + Section_of_Kaweri +portion",
+                 zifrml = "~ CRBD_berries ",
+                 dispfrml = "~CRBD_berries + distance_class * CRBD_leaves",
+                              fam = truncated_nbinom2)  -> mod_test5
+```
+
+### With severity
+
+
+
+```{r}
+data_yield %>%
+  mutate(sev_CWD = CWD_leaves/leaves,
+         sev_CRBD = CRBD_leaves/leaves,
+         sev_CLR = CLR_leaves/leaves,
+         sev_CRBD_berry = CRBD_berries/berries,
+         across(c(sev_CWD, sev_CRBD, sev_CLR, sev_CRBD_berry), ~ replace_na(., 0)),
+         disease_score = rowMeans(across(c(sev_CWD, sev_CRBD, sev_CLR, sev_CRBD_berry), 
+                                      ~ (.-mean(., na.rm = TRUE)) / sd(., na.rm = TRUE)), na.rm = TRUE),
+         across(c(sev_CWD, sev_CRBD, sev_CLR, sev_CRBD_berry), 
+                                      ~ (.-mean(., na.rm = TRUE)) / sd(., na.rm = TRUE))) -> data_yield
+
+
+```
+
+```{r}
+yield.mod.func2 <- function(data, 
+                              frml,
+                              fam = gaussian(),
+                              zifrml = "~0",
+                              dispfrml = "~1"){
+ 
+  mod_yield <-  glmmTMB(formula = formula(frml),
+                              family = fam,
+                              ziformula = formula(zifrml),
+                              dispformula = formula(dispfrml),
+                              data = data)
+  
+  res_yeilds <- DHARMa::simulateResiduals(mod_yield, plot = F)
+  plot(res_yeilds, quantreg = T)
+  par(mfrow = c(1, 2))
+  testDispersion(res_yeilds)
+  testZeroInflation(res_yeilds)
+
+  par(mfrow = c(2, 3))
+
+  plotResiduals(res_yeilds, form = data$distance_class)
+  plotResiduals(res_yeilds, form = data$distance, quantreg = T)
+  plotResiduals(res_yeilds, form = data$Shade_tree_species)
+  plotResiduals(res_yeilds, form = data$Coffee_Variety)
+  plotResiduals(res_yeilds, form = data$Section_of_Kaweri)
+  plotResiduals(res_yeilds, form = data$portion)
+  
+  par(mfrow = c(2, 2))
+  
+  plotResiduals(res_yeilds, form = data$sev_CWD, quantreg = T)
+  plotResiduals(res_yeilds, form = data$sev_CLR, quantreg = T)
+  plotResiduals(res_yeilds, form = data$sev_CRBD, quantreg = T)
+  plotResiduals(res_yeilds, form = data$sev_CRBD_berry, quantreg = T)
+  return(mod_yield)
+}
+```
+
+```{r}
+data_yield %>%
+  yield.mod.func2(frml = "berries ~ sev_CRBD ",
+                 zifrml = "~ 1",
+                 dispfrml = "~ 1",
+                              fam = nbinom2)  -> mod_yield_sev1
+
+data_yield %>%
+  yield.mod.func2(frml = "berries ~  sev_CWD",
+                 zifrml = "~ 1",
+                 dispfrml = "~ 1",
+                              fam = nbinom2)  -> mod_yield_sev2
+
+data_yield %>%
+  yield.mod.func2(frml = "berries ~  sev_CLR  ",
+                 zifrml = "~ 1",
+                 dispfrml = "~ 1",
+                              fam = nbinom2)  -> mod_yield_sev3
+
+data_yield %>%
+  yield.mod.func2(frml = "berries ~ sev_CRBD + sev_CWD + sev_CLR ",
+                 zifrml = "~ 1",
+                 dispfrml = "~ 1",
+                              fam = nbinom2)  -> mod_yield_sev4
+
+
+data_yield %>%
+  yield.mod.func2(frml = "berries ~ sev_CRBD + sev_CWD + sev_CLR + portion",
+                 zifrml = "~ 1",
+                 dispfrml = "~ 1",
+                              fam = nbinom2)  -> mod_yield_sev5
+data_yield %>%
+  yield.mod.func2(frml = "berries ~ sev_CRBD + sev_CWD + sev_CLR + portion + Section_of_Kaweri",
+                 zifrml = "~ 1",
+                 dispfrml = "~ 1",
+                              fam = nbinom2)  -> mod_yield_sev6
+data_yield %>%
+  yield.mod.func2(frml = "berries ~ sev_CRBD + sev_CWD + sev_CLR + portion + Section_of_Kaweri + Coffee_Variety",
+                 zifrml = "~ 1",
+                 dispfrml = "~ 1",
+                              fam = nbinom2)  -> mod_yield_sev7
+
+data_yield %>%
+  yield.mod.func2(frml = "berries ~ sev_CRBD + sev_CWD + sev_CLR + portion + Section_of_Kaweri + Coffee_Variety",
+                 zifrml = "~ 1",
+                 dispfrml = "~ Section_of_Kaweri + Coffee_Variety",
+                              fam = nbinom2)  -> mod_yield_sev8
+data_yield %>%
+  yield.mod.func2(frml = "berries ~ log1p(CRBD_berries) + sev_CRBD + sev_CWD + sev_CLR + portion + Section_of_Kaweri + Coffee_Variety +distance*Shade_tree_species",
+                 zifrml = "~ log1p(CRBD_berries)",
+                 dispfrml = "~ log1p(CRBD_berries)",
+                              fam = nbinom2)  -> mod_yield_sev9
+data_yield %>%
+  yield.mod.func2(frml = "berries ~ log1p(CRBD_berries) + CRBD_leaves + CWD_leaves + CLR_leaves + portion + Section_of_Kaweri + Coffee_Variety +distance*Shade_tree_species",
+                 zifrml = "~ log1p(CRBD_berries)",
+                 dispfrml = "~ log1p(CRBD_berries)*Section_of_Kaweri",
+                              fam = nbinom2)  -> mod_yield_sev10
+Anova(mod_yield_sev10)
+Anova(mod_yield_sev10,component = "zi")
+Anova(mod_yield_sev10,component = "disp")
+```
+
+
+```{r}
+data_yield %>%
+  yield.mod.func2(frml = "berries ~disease_score+ portion + Section_of_Kaweri + Coffee_Variety",
+                 zifrml = "~ 1",
+                 dispfrml = "~ 1",
+                              fam = nbinom2)  -> mod_yield_sev9
+
+
+
+data_yield %>%
+  yield.mod.func2(frml = "berries ~disease_score + portion",
+                 zifrml = "~ 1",
+                 dispfrml = "~ 1",
+                              fam = nbinom2)  -> mod_yield_sev10
+data_yield %>%
+  yield.mod.func2(frml = "berries ~disease_score + portion",
+                 zifrml = "~ 1",
+                 dispfrml = "~ portion",
+                              fam = nbinom2)  -> mod_yield_sev10
+data_yield %>%
+  yield.mod.func2(frml = "berries ~ disease_score + portion",
+                 zifrml = "~ portion",
+                 dispfrml = "~ 1",
+                              fam = nbinom2)  -> mod_yield_sev10
+```
+
+
+
+```{r}
+data_yield %>%
+  mutate(group = as.factor(1)) %>%
+  glmmTMB(data = ., berries ~(0 + Coffee_Variety + 
+                       CLR_leaves + CRBD_leaves + CWD_leaves + 
+                       portion + Section_of_Kaweri +
+                       log1p(CRBD_berries) || group ), 
+                        family = nbinom2(),
+                        start = list(theta = rep(10, 18)),
+                        map = list(theta = rep(factor(NA), 18))) -> ridge_berries
+summary(ridge_berries)
+DHARMa::simulateResiduals(ridge_berries)
+```   
+
+```{r}
+library(MuMIn)
+MuMIn::AICc(mod_yield11, mod_yield11_bis)
+```
+
 ```{r}
 Anova(mod_yield11_bis)
 
@@ -282,6 +491,7 @@ Anova(mod_yield11_bis,component = "zi")
 
 Anova(mod_yield11_bis,component = "disp")
 ```
+
 ```{r}
 ### Pairwise comparison variety
 pwc_berries <- emmeans(mod_yield11_bis, ~Coffee_Variety, component = 'response')
@@ -337,3 +547,34 @@ predict_response(mod_yield11_bis, c("CLR_leaves[all]"), type = "fixed",margin = 
 ```
 
 
+
+```{r}
+library(glmnet)
+n <- nrow(data_yield)
+train_rows <- sample(1:n, .80*n) # select 80 % of row to use in training
+data_yield_train <- data_yield[train_rows,]
+data_yield_test <- data_yield[-train_rows,]
+
+X <- model.matrix(berries ~  Coffee_Variety + 
+                     CLR_leaves + CRBD_leaves + CWD_leaves + 
+                     portion + Section_of_Kaweri +
+                     log1p(CRBD_berries) , data=data_yield_train)[,-1]
+X_test <- model.matrix(berries ~  Coffee_Variety + 
+                     CLR_leaves + CRBD_leaves + CWD_leaves + 
+                     portion + Section_of_Kaweri +
+                     log1p(CRBD_berries) , data=data_yield_test)[,-1]
+Y <- data_yield_train$berries
+Y_test <- data_yield_test$berries
+str(Y)
+str(X)
+cv.glmnet(y=Y, x=X, alpha = 0, type.measure ="mse", family = "poisson") -> test_lasso
+
+lasso_predicted <- predict(test_lasso, s = test_lasso$lambda.1se, X_test)
+mean((Y_test-lasso_predicted)^2)
+```
+
+## Test SEM
+
+```{r}
+library(piecewiseSEM)
+```
