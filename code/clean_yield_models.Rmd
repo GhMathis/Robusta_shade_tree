@@ -2,8 +2,10 @@
 title: "clean_yield_models"
 output: html_document
 date: "2025-01-24"
+editor_options: 
+  chunk_output_type: inline
 ---
-
+# Setup data and packages(no shown)
 ## 1 Load Packages
 ```{r setup, include=FALSE}
 library(tidyverse)
@@ -60,8 +62,9 @@ convert_dms_to_dd <- function(dms) {
 
 ## 2 Arrange data to long format
 
-```{r}
-data <- read_xlsx("data/R_PhD_Data_corrected.xlsx")
+```{r include=FALSE}
+data <- read_xlsx("data/R_PhD_Data_corrected2.xlsx")
+
 data %>% filter(is.na(Shade_tree_Canopy_Cover))
 data %>%
   rename(sample_code = "Coffee_soil _sample_CODE") %>%
@@ -95,10 +98,11 @@ data %>%
               ) %>%
   
   ungroup() -> covariate_data
-
+data %>%
+  filter(sample_code == "ALB4COF3_Kite") %>% pull(No_CRBD_berries_lower_portion_3rd_branch)
 ```
 
-```{r}
+```{r include=FALSE}
 ### Isolate total cont of leaves or berries per branch
 data %>%
   select(sample_code, starts_with("No_berries"),  starts_with("No_leaves")) %>%
@@ -116,10 +120,15 @@ data %>%
   select(-sample_type) %>%
    mutate(total_count = case_when(total_count > 250 ~ round(total_count/10),
                             .default = total_count)) %>% # correct error (5 branch have more than 150 leaves -> error due to one digit added when tipping)
-  pivot_wider(names_from = organ, values_from = total_count ) -> total_number_of_leaves_or_berries
+  pivot_wider(names_from = organ, values_from = total_count ) %>%
+  group_by(sample_code) %>%
+  summarise(berries = sum(berries, na.rm =T),
+            leaves = sum(leaves, na.rm =T)) -> total_number_of_leaves_or_berries
 
 ### Isolate total count of leaves or berries infected per branchs
-
+data %>%
+  select(sample_code, starts_with("No"),  -starts_with("No_berries"),  -starts_with("No_leaves"))%>%
+  select(where(is.character))
 data %>%
   select(sample_code, starts_with("No"),  -starts_with("No_berries"),  -starts_with("No_leaves")) %>% # extract the total number of leaves/berries and the number of leaves/berries infected
   pivot_longer(-sample_code, names_to = "sample_type", values_to = "infected_count") %>%
@@ -139,35 +148,46 @@ data %>%
   select(-sample_type) %>%
   pivot_wider(names_from = c(disease,organ),
               names_glue = "{disease}_infected_{organ}",
-              values_from = infected_count  ) -> number_of_infected_leaves_or_berries
+              values_from = infected_count  ) %>%
+  group_by(sample_code) %>%
+  summarise(CWD_infected_leaves = sum(CWD_infected_leaves, na.rm =T),
+            CLR_infected_leaves = sum(CLR_infected_leaves, na.rm =T),
+            CRBD_infected_leaves = sum(CRBD_infected_leaves, na.rm =T),
+            CRBD_infected_berries = sum(CRBD_infected_berries, na.rm =T)) -> number_of_infected_leaves_or_berries
 
 
 ## Merge data and compute serverity per branchs
 number_of_infected_leaves_or_berries %>%
-  left_join(total_number_of_leaves_or_berries, by = join_by("sample_code" == "sample_code",
-                                                            "branch" == "branch",
-                                                            "portion" == "portion")) %>%
-  mutate(leaves = case_when(is.na(leaves) ~ 0,
-                           .default = leaves),
-         berries = case_when(is.na(berries) ~ 0,
-                           .default = berries))%>%
-  pivot_longer(c(CWD_infected_leaves, CLR_infected_leaves, CRBD_infected_leaves, CRBD_infected_berries)) %>%
-  mutate(value = case_when(is.na(value) ~ 0,
-                           .default = value))%>%
-  pivot_wider(names_from = name, values_from = value) %>%
+  left_join(total_number_of_leaves_or_berries, by = join_by("sample_code" == "sample_code")) %>%
+  # mutate(leaves = case_when(is.na(leaves) ~ 0,
+  #                          .default = leaves),
+  #        berries = case_when(is.na(berries) ~ 0,
+  #                          .default = berries))%>%
+  # pivot_longer(c(CWD_infected_leaves, CLR_infected_leaves, CRBD_infected_leaves, CRBD_infected_berries)) %>%
+  # mutate(value = case_when(is.na(value) ~ 0,
+  #                          .default = value))%>%
+  # pivot_wider(names_from = name, values_from = value) %>%
   left_join(covariate_data, by = "sample_code") %>%
   mutate(Shade_tree_species = as.factor(Shade_tree_species)) %>%
   rename(distance = "Actual_distance_from_shade_tree_m")%>%
   mutate(berries = as.integer(berries),
          leaves = as.integer(leaves),
          # across(c(CWD_infected_leaves, CLR_infected_leaves, CRBD_infected_leaves, CRBD_infected_berries), 
-         #                              ~ (.-mean(., na.rm = TRUE)) / sd(., na.rm = TRUE)),
-         berries_absence = berries==0) -> data_yield
+         #                              ~ (.-mean(., na.rm = TRUE)) / sd(., na.rm = TRUE))
+         )%>%
+  mutate(CWD_severity = CWD_infected_leaves/leaves,
+            CLR_severity = CLR_infected_leaves/leaves,
+            CRBD_severity = CRBD_infected_leaves/leaves,
+            CRBD_severity_berries = CRBD_infected_berries/berries) -> data_yield
 
+data_yield %>%
+  filter(berries != 0) -> data_yield2
 ```
 
-```{r}
-yield.mod.func <- function(data, 
+# Yield (nbr berries per tree) explain with **severity** 
+
+```{r include=FALSE}
+yield.mod.func2 <- function(data, 
                               frml,
                               fam = gaussian(),
                               zifrml = "~0",
@@ -192,61 +212,137 @@ glm
   plotResiduals(res_yeilds, form = data$Shade_tree_species)
   plotResiduals(res_yeilds, form = data$Coffee_Variety)
   plotResiduals(res_yeilds, form = data$Section_of_Kaweri)
-  plotResiduals(res_yeilds, form = data$portion)
+  #plotResiduals(res_yeilds, form = data$portion)
   
   par(mfrow = c(2, 2))
   
-  plotResiduals(res_yeilds, form = data$CWD_infected_leaves, quantreg = T)
-  plotResiduals(res_yeilds, form = data$CLR_infected_leaves, quantreg = T)
-  plotResiduals(res_yeilds, form = data$CRBD_infected_leaves, quantreg = T)
-  plotResiduals(res_yeilds, form = data$CRBD_infected_berries, quantreg = T)
+  plotResiduals(res_yeilds, form = data$CRBD_severity_berries, quantreg = T)
+  plotResiduals(res_yeilds, form = data$CLR_severity, quantreg = T)
+  plotResiduals(res_yeilds, form = data$CRBD_severity, quantreg = T)
+  plotResiduals(res_yeilds, form = data$CRBD_severity, quantreg = T)
   return(mod_yield)
 }
 ```
 
+## Select a model based on residuals
+
+```{r echo = T, results = 'hide'}
+data_yield2 %>%
+  yield.mod.func2(frml = "berries ~  Section_of_Kaweri + Coffee_Variety +distance*Shade_tree_species + CRBD_severity_berries + CRBD_severity + CWD_severity + CLR_severity + (1| Section_of_Kaweri)",
+                 zifrml = "~0",
+                 dispfrml = "~ 1",
+                              fam = truncated_nbinom1)  -> mod_yield_sev
+data_yield2 %>%
+  yield.mod.func2(frml = "berries ~  Section_of_Kaweri + Coffee_Variety +distance*Shade_tree_species + poly(CRBD_severity_berries,2)+ CRBD_severity + CWD_severity + CLR_severity + (1| Section_of_Kaweri)",
+                 zifrml = "~0",
+                 dispfrml = "~ 1",
+                              fam = truncated_nbinom1)  -> mod_yield_sev2
+data_yield2 %>%
+  yield.mod.func2(frml = "berries ~  Section_of_Kaweri + Coffee_Variety +distance*Shade_tree_species + poly(CRBD_severity_berries,2)+ CRBD_severity + CWD_severity + CLR_severity + (1| Section_of_Kaweri)",
+                 zifrml = "~0",
+                 dispfrml = "~ CLR_severity",
+                              fam = truncated_nbinom1)  -> mod_yield_sev3
+```
+
 
 ```{r}
-data_yield %>%
-  yield.mod.func(frml = "berries ~ CRBD_infected_leaves + CWD_infected_leaves + CLR_infected_leaves + portion + Section_of_Kaweri + Coffee_Variety +distance*Shade_tree_species",
-                 zifrml = "~CRBD_infected_leaves + CWD_infected_leaves + CLR_infected_leaves + portion + Coffee_Variety",
-                 dispfrml = "~ CRBD_infected_berries*Section_of_Kaweri",
-                              fam = genpois)  -> mod_yield_sev
-data_yield%>%
-  mutate(CRBD_infected_berries = case_when(berries == 0 ~ NA,
-                                           .default =CRBD_infected_berries ))
-na.omit(data_yield) -> data_yield2
-data_yield %>%  
-  yield.mod.func(frml = "berries ~  portion*Coffee_Variety + distance_class+Shade_tree_speciesSection_of_Kaweri + CRBD_infected_leaves + CWD_infected_leaves",
-                 zifrml = "~ Section_of_Kaweri + distance_class ",
-                 dispfrml = "~Section_of_Kaweri + distance_class",
-                 fam = nbinom1) -> mod_yield_sev2
+data_yield2 %>%
+  yield.mod.func2(frml = "berries ~  Section_of_Kaweri + Coffee_Variety +distance*Shade_tree_species + poly(CRBD_severity_berries,2)+ CRBD_severity + CWD_severity + CLR_severity + (1| Section_of_Kaweri)",
+                 zifrml = "~0",
+                 dispfrml = "~ 1",
+                              fam = truncated_nbinom1)  -> mod_yield_sev4
+```
 
-summary(mod_yield_sev2)
-Anova(mod_yield_sev2)
-Anova(mod_yield_sev2,component = "zi")
-Anova(mod_yield_sev2,component = "disp")
 
-data_yield %>%  
-  yield.mod.func(frml = "berries ~  portion*Coffee_Variety + distance_class + Section_of_Kaweri + CRBD_infected_leaves + CWD_infected_leaves + CLR_infected_leaves",
-                 zifrml = "~ 1",
-                 dispfrml = "~Section_of_Kaweri + distance_class",
-                 fam = nbinom1) -> mod_yield_sev3
+**Model 2, 3, 4 have good residuals**
 
-data_yield %>%  
-  yield.mod.func(frml = "berries ~  portion*Coffee_Variety + distance_class*Shade_tree_species + Section_of_Kaweri  + (CRBD_infected_leaves + CWD_infected_leaves + CLR_infected_leaves)*Shade_tree_species ",
-                 zifrml = "~ Section_of_Kaweri + distance_class + Coffee_Variety ",
-                 dispfrml = "~Section_of_Kaweri + distance_class",
-                 fam = truncated_nbinom2)  -> mod_yield_sev4
-simulationOutput <- simulateResiduals(mod_yield_sev3)
-testQuantiles(simulationOutput)
+```{r}
+AIC(mod_yield_sev2, mod_yield_sev3, mod_yield_sev4)
+```
+**Model 3 minimize AIC**
+
+```{r}
 summary(mod_yield_sev3)
+
 Anova(mod_yield_sev3)
-Anova(mod_yield_sev3,component = "zi")
+
 Anova(mod_yield_sev3,component = "disp")
 ```
 
-```{r}
-data_yield %>%
-  select()
+## Plot only significant effect from the Anova
+
+```{r include=FALSE}
+### Pairwise comparison variety
+pwc_variety <- emmeans(mod_yield_sev3, ~Coffee_Variety)
+summary(pwc_variety)
+
+pairs(pwc_variety)
+multcomp::cld(pwc_variety, Letter = "abcdefg") %>%
+  as.data.frame() %>%
+  dplyr::select(Coffee_Variety, .group) -> compl_letter
 ```
 
+
+```{r echo=FALSE}
+### Variety
+predict_response(mod_yield_sev3, c("Coffee_Variety[all]"), type  ="fixed", margin = "marginalmeans") %>%
+  as.data.frame %>%
+  left_join(compl_letter, by = join_by(x == Coffee_Variety)) %>%
+  mutate(x = factor(x, level = compl_letter$Coffee_Variety)) %>%
+  ggplot() +
+  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high,), 
+                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
+  geom_text(aes(label = .group, x = x, y = max(conf.high) +1), size = 5, vjust = 0) +
+  #scale_y_continuous(limits = c(0,90))+
+  main_theme +
+  labs(x= "Variety", y = "Number of berries")
+```
+
+
+```{r include=FALSE}
+### Pairwise comparison section kaweri
+pwc_Section_of_Kaweri  <- emmeans(mod_yield_sev3, ~Section_of_Kaweri)
+summary(pwc_Section_of_Kaweri)
+
+pairs(pwc_Section_of_Kaweri)
+multcomp::cld(pwc_Section_of_Kaweri, Letter = "abcdefg") %>%
+  as.data.frame() %>%
+  dplyr::select(Section_of_Kaweri, .group) -> compl_letter3
+```
+
+
+```{r echo=FALSE}
+### Variety
+predict_response(mod_yield_sev3, c("Section_of_Kaweri[all]"), type  ="fixed", margin = "marginalmeans") %>%
+  as.data.frame %>%
+  left_join(compl_letter3, by = join_by(x == Section_of_Kaweri)) %>%
+  mutate(x = factor(x, level = compl_letter3$Section_of_Kaweri)) %>%
+  ggplot() +
+  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high,), 
+                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
+  geom_text(aes(label = .group, x = x, y = max(conf.high) +1), size = 5, vjust = 0) +
+  #scale_y_continuous(limits = c(0,90))+
+  main_theme +
+  labs(x= "Section_of_Kaweri", y = "Number of berries")
+```
+
+
+```{r echo=FALSE}
+### CRBD_berries
+predict_response(mod_yield_sev3, c("CRBD_severity_berries[all]"), type = "fixed", margin = "marginalmeans", rg.limit = 25000) %>%
+  plot(show_data = TRUE) +
+  labs(x = "Severity CRBD berries", y= "Number of berries") +
+  main_theme
+```
+
+
+```{r echo=FALSE}
+### CLR leaves
+
+predict_response(mod_yield_sev3, c("CLR_severity[all]"), type = "fixed", margin = "marginalmeans", rg.limit = 30000) %>%
+  plot(show_data = TRUE) +
+  labs(x = "Severity CLR", y= "Number of berries") +
+  main_theme
+
+
+```

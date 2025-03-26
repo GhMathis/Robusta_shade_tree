@@ -3,15 +3,14 @@ title: "Untitled"
 author: "Mathis Gheno"
 date: "2024-12-05"
 output: html_document
-editor_options: 
-  chunk_output_type: inline
 ---
 
 ## 1 Load Packages
-```{r setup, include=FALSE}
+```{r include=FALSE}
 library(tidyverse)
 library(readxl)
 library(ggsci)
+library(GGally)
 
 library(car)
 library(glmmTMB)
@@ -37,34 +36,11 @@ main_theme = theme_minimal()+
         axis.title= element_text(size=28),
         strip.text = element_text(colour = "black", size=15, face ="italic"))
 
-convert_dms_to_dd <- function(dms) {
-  if(is.na(dms)){
-    return(NA)
-  }
-  if(str_detect(dms, "^\\d+$")){
-    return(NA)
-  } else{
-  dms <- str_replace_all(dms, "[°′″’']", " ") # Replace degree, minute, and second symbols with spaces
-  dms_split <- str_split(dms, "\\s+")[[1]]  # Split the string into components
-  degrees <- as.numeric(dms_split[1])
-  minutes <- as.numeric(dms_split[2])
-  seconds <- as.numeric(dms_split[3])
-  direction <- dms_split[4]
-  
-  # Calculate decimal degrees
-  decimal_degrees <- degrees + minutes / 60 + seconds / 3600
-  if (direction %in% c("S", "W")) {
-    decimal_degrees <- -decimal_degrees
-  }
-  return(decimal_degrees)
-  }
-}
-
 ```
 
 ## 2 Arrange data to long format
 
-```{r}
+```{r include=FALSE}
 data <- read_xlsx("data/R_PhD_Data_corrected2.xlsx")
 data %>% filter(is.na(Shade_tree_Canopy_Cover))
 data %>%
@@ -78,20 +54,9 @@ data %>%
 
 covariate_data <- data %>%
   select(Shade_tree_species, Section_of_Kaweri, sample_code, Coffee_Variety,
-         Actual_distance_from_shade_tree_m, Shade_tree_Canopy_Cover, Shade_tree_soil_sample_CODE,
-         Longitude, Latitude) %>% 
+         Actual_distance_from_shade_tree_m, Shade_tree_soil_sample_CODE) %>% 
   mutate(Coffee_Variety = case_when(is.na(Coffee_Variety) ~"unknown_var",
-                                    .default = Coffee_Variety)) %>%
-  ## A little trick to remove na from Shade_tree_Canopy_Cover
-  group_by(Shade_tree_soil_sample_CODE) %>%
-  mutate(Shade_tree_Canopy_Cover = mean(Shade_tree_Canopy_Cover, na.rm = T),
-          Longitude = ifelse(is.na(Longitude), first(na.omit(Longitude)), Longitude),
-          Latitude = ifelse(is.na(Latitude), first(na.omit(Latitude)), Latitude),
-          Longitude_dd = ifelse(!is.na(Longitude), sapply(Longitude, convert_dms_to_dd), NA),
-          Latitude_dd = ifelse(!is.na(Latitude), sapply(Latitude, convert_dms_to_dd), NA),
-          
-          ) %>%
-  ungroup() 
+                                    .default = Coffee_Variety))
 
  data %>% 
   select(sample_code, starts_with("inc"), starts_with("Inc")) %>%
@@ -119,58 +84,14 @@ covariate_data <- data %>%
             n =  n(),
             distance = unique(Actual_distance_from_shade_tree_m),
             Shade_tree_species = unique(Shade_tree_species),
-            Shade_tree_Canopy_Cover =  unique(Shade_tree_Canopy_Cover),
             Shade_tree_soil_sample_CODE = unique(Shade_tree_soil_sample_CODE),
             Coffee_Variety = unique(Coffee_Variety)) %>%
    ungroup() -> data_incidence
 ```
 
-## 3 Covariate
-```{r}
-library(GGally)
-covariate_data %>%
-  select(Actual_distance_from_shade_tree_m, Shade_tree_Canopy_Cover) %>%
-  mutate(Actual_distance_from_shade_tree_m_exp  =exp(Actual_distance_from_shade_tree_m),
-         Shade_tree_Canopy_Cover_exp = exp(Shade_tree_Canopy_Cover)) %>%
-  ggpairs()
-```
+## 3 Incidence model
 
-```{r}
-coord <- covariate_data %>%
-  select(Latitude_dd, Longitude_dd, Shade_tree_soil_sample_CODE,Longitude, Latitude)
-
- coord %>% 
-  group_by(Latitude_dd, Longitude_dd) %>% 
-  filter(n() > 1) 
-
- coord %>% 
-  unique() %>%
-  group_by(Latitude_dd, Longitude_dd) %>% 
-  filter(n() > 1) -> temp
-ggplot(coord) +
-  geom_point(aes(Latitude_dd , Longitude_dd ))
-
-sf_uganda <- st_read("data/Uganda_Districts-2020---136-wgs84/Uganda_Districts-2020---136-wgs84.shp")
-
-coord %>%
- st_as_sf(coords = c("Longitude_dd", "Latitude_dd"), crs = st_crs(sf_uganda)) -> sp_coord
-
-sp_coord %>%
-  st_buffer(10000)%>%
-  st_union()%>%
-  st_cast(to = "POLYGON") -> limit_map
-
-st_crop(x = sf_uganda, y =limit_map) -> sf_uganda_crop
-
-ggplot() +
-  geom_sf(data = sf_uganda_crop, col = "gray", fill = "white")+
-  geom_sf(data = sp_coord)
-
-```
-
-## 4 Incidence model
-
-### 4.1 CRBD incidence data
+### 3.1 CRBD incidence data
 
 #### Shade tree
 
@@ -178,13 +99,20 @@ ggplot() +
 data_incidence %>%
   filter(disease == "CRBD") -> binary_data_CRBD
 ## Compute binomial glm  
-mod_binary_incidence_CRBD <- glm(formula = true_incidence ~ Shade_tree_species*distance+ Coffee_Variety , #  (don't work)
+mod_binary_incidence_CRBD <- glm(formula = true_incidence ~ Shade_tree_species*distance + Coffee_Variety,
                               family = binomial,
                               data = binary_data_CRBD)
+```
 
+
+```{r include=FALSE}
 res_incidence_CRBD<- DHARMa::simulateResiduals(mod_binary_incidence_CRBD, plot = TRUE)
 testDispersion(res_incidence_CRBD)
 testZeroInflation(res_incidence_CRBD)
+```
+
+
+```{r echo=FALSE}
 summary(mod_binary_incidence_CRBD)
 
 ## Anova of type 2 and 3 are more robust that basic anova 
@@ -206,57 +134,11 @@ predict_response(mod_binary_incidence_CRBD, c("distance[all]"), margin = "margin
 ```
 No effect (see anova)
 
-
-#### Coffee var
-
-```{r}
-## Compute binomial glm  
-mod_binary_incidence_CRBD_variety <- glmmTMB(formula = true_incidence ~ Coffee_Variety ,
-                              family = binomial,
-                              data = binary_data_CRBD)
-
-res_incidence_CRBD_variety<- DHARMa::simulateResiduals(mod_binary_incidence_CRBD_variety, plot = TRUE)
-testDispersion(res_incidence_CRBD_variety)
-testZeroInflation(res_incidence_CRBD_variety)
-```
-
-
-```{r}
-### Anova
-car::Anova(mod_binary_incidence_CRBD_variety, 2) %>%
-  round(2) %>%
-  knitr::kable()
-
-car::Anova(mod_binary_incidence_CRBD_variety, 3)
-
-##
-summ_mod_CRBD <- summary(mod_binary_incidence_CRBD_variety)
-summ_mod_CRBD
-
-binary_data_CRBD%>%
-  ggplot() +
-  geom_bar(aes(Coffee_Variety, fill = as.factor(true_incidence)),position = "fill") +
-  labs(y = "Incidence proportion \n CRBD", x = "Coffee Variety", fill = "Coffee tree state \n ( 1 infected, 0 not infected)" ) +
-  scale_fill_startrek()+
-  main_theme 
-
-predict_response(mod_binary_incidence_CRBD_variety, c("Coffee_Variety"), margin = "marginalmeans") %>% #  margin = "marginalmeans" is to average over all shade tree, ortherwise prediction would be fixe for reference shade tree (albizia)
-  as.data.frame %>%
-  ggplot() +
-  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high,), 
-                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
-  scale_y_continuous(limits = c(0,1))+
-  main_theme +
-  labs(x= "Variety", y = "incidence CRBD") 
-
-```
-
-### 4.2 CWD incidence data
+### 3.2 CWD incidence data
 
 #### Shade tree
 
 ```{r}
-## Arrange the data like I've explained bellow 
 data_incidence %>%
   filter(disease == "CWD")  -> binary_data_CWD
 
@@ -264,7 +146,10 @@ data_incidence %>%
 mod_binary_incidence_CWD <- glm(formula = true_incidence ~ Shade_tree_species*distance + Coffee_Variety,
                               family = binomial,
                               data = binary_data_CWD)
+```
 
+
+```{r include=FALSE}
 res_incidence_CWD<- DHARMa::simulateResiduals(mod_binary_incidence_CWD, plot = TRUE)
 testDispersion(res_incidence_CWD)
 testZeroInflation(res_incidence_CWD)
@@ -274,10 +159,10 @@ testZeroInflation(res_incidence_CWD)
 ```{r}
 ## Anova 
 car::Anova(mod_binary_incidence_CWD, 2) %>%
-  round(2) %>%
-  knitr::kable()
+  round(2)
 car::Anova(mod_binary_incidence_CWD, 3)
 summary(mod_binary_incidence_CWD)
+
 binary_data_CWD %>%
   ggplot() +
   geom_bar(aes(Coffee_Variety, fill = as.factor(true_incidence)),position = "fill") +
@@ -304,23 +189,16 @@ predict_response(mod_binary_incidence_CWD, c("Coffee_Variety"), margin = "margin
   main_theme +
   labs(x= "Variety", y = "incidence CWD") 
 
-binary_data_CWD%>%
-  ggplot() +
-  geom_bar(aes(Coffee_Variety, fill = as.factor(true_incidence)),position = "fill") +
-  labs(y = "Incidence proportion \n CWD", x = "Coffee Variety", fill = "Coffee tree state \n ( 1 infected, 0 not infected)" ) +
-  scale_fill_startrek()+
-  main_theme 
 predict_response(mod_binary_incidence_CWD, c("distance[all]"), margin = "marginalmeans") %>%
   as.data.frame %>%
   ggplot() +
   geom_line(aes(x, predicted), cex =2) +
   scale_y_continuous(limits = c(0,1))+
   main_theme +
-  labs(x= "distance", y = "incidence CRBD")
+  labs(x= "distance", y = "incidence CWD")
 ```
 
 ```{r}
-summary(mod_binary_incidence_CWD)
 predict_response(mod_binary_incidence_CWD, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
   as.data.frame %>%
   ggplot() +
@@ -333,27 +211,29 @@ predict_response(mod_binary_incidence_CWD, c("distance [all]","Shade_tree_specie
 ```
 
 
-### 4.3 CLR incidence data
+### 3.3 CLR incidence data
 
 #### Shade tree
 
 ```{r}
-## Arrange the data like I've explained bellow 
-
 data_incidence %>%
   filter(disease == "CLR") -> binary_data_CLR
-binary_data_CLR$true_incidence >1
+
 ## Compute binomial glm  
 mod_binary_incidence_CLR <- glm(formula = true_incidence ~ Shade_tree_species*distance + Coffee_Variety, #  (don't work)
                               family = binomial,
                               data = binary_data_CLR)
+```
 
 
+```{r include=FALSE}
 res_incidence_CLR<- DHARMa::simulateResiduals(mod_binary_incidence_CLR, plot = TRUE)
 testDispersion(res_incidence_CLR)
 testZeroInflation(res_incidence_CLR)
+```
 
 
+```{r}
 ## Anova of type 2 and 3 are more robust that basic anova 
 car::Anova(mod_binary_incidence_CLR, 2) %>%
   round(2) %>%
@@ -361,11 +241,7 @@ car::Anova(mod_binary_incidence_CLR, 2) %>%
 car::Anova(mod_binary_incidence_CLR, 3)
 
 ##
-summ_mod_CLR <- summary(mod_binary_incidence_CLR)
-summ_mod_CLR
-
-#(just an example on how to compute probability of occurrence of the disease. Those formula should only be computed with significant parameters)
-plogis(3.35040 +(16.21567-0.37268)*20) # Artocarpus heterophyllus at 20m 
+summary(mod_binary_incidence_CLR)
 
 predict_response(mod_binary_incidence_CLR, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
   as.data.frame %>%
@@ -379,7 +255,7 @@ predict_response(mod_binary_incidence_CLR, c("distance [all]","Shade_tree_specie
 
 pwc_ClR_incid <- emmeans(mod_binary_incidence_CLR, ~Shade_tree_species| distance, component = 'response')
 
-summary(pwc_ClR_incid)
+
 pairs(pwc_ClR_incid)
 multcomp::cld(pwc_ClR_incid, Letter = "abcdefg") %>%
   as.data.frame() %>%
@@ -406,43 +282,6 @@ predict_response(mod_binary_incidence_CLR, c("distance[all]"), margin = "margina
 ```
 
 
-#### Coffee var
-
-```{r}
-## Compute binomial glm  
-mod_binary_incidence_CLR_variety <- glmmTMB(formula = true_incidence ~ Coffee_Variety ,
-                              family = binomial,
-                              data = binary_data_CLR)
-
-res_incidence_CLR_variety<- DHARMa::simulateResiduals(mod_binary_incidence_CLR_variety, plot = TRUE)
-testDispersion(res_incidence_CLR_variety)
-testZeroInflation(res_incidence_CLR_variety)
-```
-
-
-```{r}
-## Anova of type 2 and 3 are more robust that basic anova 
-car::Anova(mod_binary_incidence_CLR_variety, 2) %>%
-  round(2) %>%
-  knitr::kable()
-car::Anova(mod_binary_incidence_CLR_variety, 3)
-binary_data_CLR%>%
-  ggplot() +
-  geom_bar(aes(Coffee_Variety, fill = as.factor(true_incidence)),position = "fill") +
-  labs(y = "Incidence proportion \n CLR", x = "Coffee Variety", fill = "Coffee tree state \n ( 1 infected, 0 not infected)" ) +
-  scale_fill_startrek()+
-  main_theme
-predict_response(mod_binary_incidence_CLR_variety, c("Coffee_Variety"), margin = "marginalmeans") %>% #  margin = "marginalmeans" is to average over all shade tree, ortherwise prediction would be fixe for reference shade tree (albizia)
-  as.data.frame %>%
-  ggplot() +
-  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high,), 
-                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
-  scale_y_continuous(limits = c(0,1))+
-  main_theme +
-  labs(x= "Variety", y = "incidence CLR") 
-```
-
-
 ### 4.4 Recap incidence : graph
 
 ```{r}
@@ -461,26 +300,15 @@ data_incidence %>%
   scale_fill_startrek() +
   labs(x = " Coffee Variety", y = "Proportion", fill = "Incidence") +
   main_theme
-
-data_incidence %>%
-  ggplot(aes(distance, true_incidence))+
-  facet_wrap(~disease) +
-  geom_jitter( cex = 3, alpha =0.3, height = 0.1,width = 0) +
-   geom_smooth(method = "glm", formula = y ~ x, colour = "black",
-              linetype = 2, fill = "gray80", alpha = 0.2,
-              method.args = list(family = binomial))+
-  labs(x = " Shade tree", y = "Proportion", fill = "Incidence")+
-  main_theme +
-  theme_classic()
 ```
 
 
 
-## 5 Severity model
+## 4 Severity model
 
-### 5.1 Compute severity for each branchs
+### 4.1 Compute severity for each branchs
 
-```{r}
+```{r include=FALSE}
 ### Isolate total cont of leaves or berries per branch
 data %>%
   select(sample_code, starts_with("No_berries"),  starts_with("No_leaves")) %>%
@@ -498,8 +326,6 @@ data %>%
   select(-sample_type) -> total_number_of_leaves_or_berries
 
 ### Isolate total count of leaves or berries infected per branchs
-str(data)
-data$No_CRBD_berries_lower_portion_3rd_branch 
 data %>%
   select(sample_code, starts_with("No"),  -starts_with("No_berries"),  -starts_with("No_leaves")) %>% # extract the total number of leaves/berries and the number of leaves/berries infected
   pivot_longer(-sample_code, names_to = "sample_type", values_to = "infected_count") %>%
@@ -517,7 +343,6 @@ data %>%
     branch = str_extract(sample_type, "\\d+(st|nd|rd|th)")
    ) -> number_of_infected_leaves_or_berries
 
-number_of_infected_leaves_or_berries %>% filter(organ == "berries")
 ## Merge data and compute serverity per branchs
 number_of_infected_leaves_or_berries %>%
   left_join(total_number_of_leaves_or_berries, by = join_by("sample_code" == "sample_code",
@@ -538,21 +363,10 @@ number_of_infected_leaves_or_berries %>%
     log_total_count = log(total_count), # correct error (5 branch have more than 150 leaves -> error due to one digit added when tipping)
     across(where(is.character),~as.factor(.x))) -> data_severity
 ```
-
-
-```{r}
-data_severity %>%
-  # filter(severity != 0) %>%
-  ggplot()+ 
-  facet_wrap(~disease) +
-  geom_boxplot(aes(Section_of_Kaweri, severity))
-data_severity %>%
-  filter(total_count>infected_count) -> data_severity
-```
  
  Function to compute models for all disease at each 3 portions of coffee tree.
  
-```{r}
+```{r echo=FALSE}
 data_severity %>%
   filter(organ != "berries",
          (portion == "Top" & disease %in% c("CRBD", "CWD")) |  portion == "lower" & disease == "CLR") %>%
@@ -588,14 +402,16 @@ disease_corr_df %>%
         strip.text = element_text(colour = "black", size=10, face ="italic"))
 ```
  
-```{r}
+```{r include=FALSE}
 
 severity.mod.func <- function(data, 
                               frml,
-                              zifrml){
+                              zifrml,
+                              disprml = formula("~1")){
  
   mod_severity <-  glmmTMB(formula = frml,
                               ziformula = zifrml,
+                              dispformula = disprml,
                               family = beta_family(),
                               #weights = total_count ,
                               data = data)
@@ -615,67 +431,66 @@ severity.mod.func <- function(data,
   return(mod_severity)
 }
 
-
-plot.effect.model <- function(data, model){
-  assign("data", data, envir = .GlobalEnv) 
-  plot(allEffects(model))
-  
-  print(Anova(model))
-  print(summary(model))
-}
-
 ```
 
-### 5.2 CRBD LEAVES severity model
+### 4.2 CRBD LEAVES severity model
 
-```{r}
+```{r include=FALSE}
 data_severity %>%
   filter(disease == "CRBD", organ =="leaves") -> data_severity_CRBD_leaves
 ```
 
 #### Top portion
 
-```{r}
+```{r results = 'hide'}
 # Models
 data_severity_CRBD_leaves %>%
-  filter(portion =="Top", !is.na(severity)) -> CRBD_leaves_top
-ggplot(CRBD_leaves_top)+
-  facet_wrap(~Coffee_Variety)+
-  geom_point(aes(log_total_count, severity))
+  filter(portion =="Top", !is.na(severity)) %>%
+  mutate(severity = case_when(severity == 1 ~ severity*0.999,
+                              .default = severity))-> CRBD_leaves_top
 
 CRBD_leaves_top%>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species *distance   + (1|sample_code)"),
+  severity.mod.func(frml = formula("severity ~ Shade_tree_species *distance   + (1|Section_of_Kaweri)"),
                     zifrml = formula("~1")) -> mod_severity_CRBD_leaves_top
 
 CRBD_leaves_top%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety +
-                                            (1|sample_code)"),
+                                            (1|Section_of_Kaweri)"),
                     zifrml = formula("~1")) -> mod_severity_CRBD_leaves_top2
 CRBD_leaves_top%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety +
-                                            (1|sample_code)"),
+                                            (1|Section_of_Kaweri)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_severity_CRBD_leaves_top3
 CRBD_leaves_top%>%
+  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + 
+                                            (1|Section_of_Kaweri)"),
+                              zifrml = formula("~Coffee_Variety ")) -> mod_severity_CRBD_leaves_top4
+
+CRBD_leaves_top%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   +
-                                            (1|sample_code)"),
-                              zifrml = formula("~Coffee_Variety")) -> mod_severity_CRBD_leaves_top4
+                                            (1|Section_of_Kaweri)"),
+                    zifrml = formula("~Coffee_Variety"),
+                    disprml = formula("~Coffee_Variety")) -> mod_severity_CRBD_leaves_top5
 
 ```
 
 
 
 ```{r}
-AIC(mod_severity_CRBD_leaves_top,mod_severity_CRBD_leaves_top3,mod_severity_CRBD_leaves_top4)
+
 # Anova
-Anova(mod_severity_CRBD_leaves_top4) %>%
+Anova(mod_severity_CRBD_leaves_top5) %>%
   round(2) %>%
   knitr::kable()
 
-Anova(mod_severity_CRBD_leaves_top4, component = "zi") %>%
+Anova(mod_severity_CRBD_leaves_top5, component = "zi") %>%
+  knitr::kable()
+
+Anova(mod_severity_CRBD_leaves_top5, component = "disp") %>%
   knitr::kable()
 
 ### Pairwise comparison variety
-pwc_CRBD <- emmeans(mod_severity_CRBD_leaves_top4, ~Coffee_Variety, component = 'response')
+pwc_CRBD <- emmeans(mod_severity_CRBD_leaves_top5, ~Coffee_Variety, component = 'response')
 summary(pwc_CRBD)
 
 pairs(pwc_CRBD)
@@ -684,9 +499,10 @@ multcomp::cld(pwc_CRBD, Letter = "abcdefg") %>%
   dplyr::select(Coffee_Variety, .group) -> compl_letter 
 
 ### Variety
-predict_response(mod_severity_CRBD_leaves_top4, c("Coffee_Variety"), type = "zero_inflated") %>%
+predict_response(mod_severity_CRBD_leaves_top5, c("Coffee_Variety"), type = "zero_inflated") %>% 
   as.data.frame %>%
   left_join(compl_letter, by = join_by(x == Coffee_Variety)) %>%
+  mutate(x = factor(x, level = compl_letter$Coffee_Variety)) %>%
   ggplot() +
   geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high,), 
                   linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
@@ -696,7 +512,7 @@ predict_response(mod_severity_CRBD_leaves_top4, c("Coffee_Variety"), type = "zer
   labs(x= "Variety", y = "severity CRBD") 
 
 ### Distance
-predict_response(mod_severity_CRBD_leaves_top3, c("distance[all]"), type = "fixed") %>%
+predict_response(mod_severity_CRBD_leaves_top5, c("distance[all]"), type = "fixed", margin = "marginalmeans") %>%
   as.data.frame %>%
   ggplot() +
   geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high), alpha= 0.5) +
@@ -706,214 +522,69 @@ predict_response(mod_severity_CRBD_leaves_top3, c("distance[all]"), type = "fixe
   main_theme
 ```
 
-##### more graph
+### 4.3 CWD severity model
 
-```{r}
-summary(mod_severity_CRBD_leaves_top4)
-
-predict_response(mod_severity_CRBD_leaves_top4, c("distance [all]","Shade_tree_species"), type = "zero_inflated") %>% 
-  as.data.frame %>%
-  mutate(type = "fixed + zif") -> dist_shade_zif
-predict_response(mod_severity_CRBD_leaves_top4, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
-  as.data.frame %>%
-  mutate(type = "fixed") %>%
-  bind_rows(dist_shade_zif) %>%
-  ggplot() +
-  geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, fill = type), alpha= 0.5 )+
-  geom_line(aes(x = x, y = predicted, col = type))+
-  facet_wrap(~group) +
-  scale_y_continuous(limits = c(0,1))+
-  scale_color_simpsons() +
-  scale_fill_simpsons() +
-  main_theme
-
-predict_response(mod_severity_CRBD_leaves_top4, c("distance [all]","Shade_tree_species"), type = "fixed") %>%plot
-
-predict_response(mod_severity_CRBD_leaves_top4, c("Coffee_Variety"), type = "zero_inflated") %>%
-  as.data.frame %>%
-  mutate(type = "fixed + zif") -> coffee_var_zif
-predict_response(mod_severity_CRBD_leaves_top4, c("Coffee_Variety"), type = "fixed") %>%
-  as.data.frame %>%
-  mutate(type = "fixed") %>%
-  bind_rows(coffee_var_zif) %>%
-  ggplot() +
-  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, col = type), 
-                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
-  scale_y_continuous(limits = c(0,1))+
-  scale_color_simpsons() +
-  scale_fill_simpsons() +
-  main_theme +
-  labs(x= "Variety", y = "severity") 
-```
-
-### 5.3 CRBD BERRIES severity model
-
-```{r}
-data_severity %>%
-  filter(disease == "CRBD", organ == "berries") -> data_severity_CRBD_berries
-
-data_severity_CRBD_berries%>%
-  ggplot() +
-  geom_boxplot(aes(Coffee_Variety, severity))
-
-data_severity_CRBD_berries%>%
-  
-  ggplot() +
-  facet_wrap(~portion*Shade_tree_species)+
-  geom_boxplot(aes(Coffee_Variety, severity))
-```
-
-
-#### Top
-```{r}
-# Models
-
-data_severity_CRBD_berries %>%
-  filter(portion =="Top") -> CRBD_berries_top
-
-####
-CRBD_berries_top %>%
-  mutate(Shade_tree_Canopy_Cover = scale(Shade_tree_Canopy_Cover)) -> CRBD_berries_top
-
-CRBD_berries_top %>%
-  ggplot() +
-  geom_boxplot(aes(Shade_tree_species, Shade_tree_Canopy_Cover))
-
-
-lm_test <- aov(Shade_tree_Canopy_Cover~Shade_tree_species , data = CRBD_berries_top)
-plot(lm_test)
-summary(lm_test)
-TukeyHSD(lm_test)
-####
-
-
-CRBD_berries_top %>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance +Section_of_Kaweri  + (1|sample_code)"),
-                    zifrml = formula("~1")) -> mod_severity_CRBD_berries_top
-
-CRBD_berries_top %>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety +Section_of_Kaweri+
-                                            (1|sample_code)"),
-                    zifrml = formula("~1")) -> mod_severity_CRBD_berries_top2
-
-CRBD_berries_top %>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety + 
-                                            (1|sample_code)"),
-                              zifrml = formula("~Coffee_Variety")) -> mod_severity_CRBD_berries_top3
-
-CRBD_berries_top %>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Section_of_Kaweri+
-                                            (1|sample_code)"),
-                              zifrml = formula("~Coffee_Variety")) -> mod_severity_CRBD_berries_top4
-
-
-res_severity_temp <- DHARMa::simulateResiduals(mod_severity_CRBD_berries_top3, plot = TRUE)
-plotResiduals(res_severity_temp, form = CRBD_berries_top$Shade_tree_Canopy_Cover)
-```
-
-
-```{r}
-CRBD_berries_top %>%
-  plot.effect.model(mod_severity_CRBD_berries_top3)
-```
-
-```{r}
-summary(mod_severity_CRBD_berries_top3)
-
-predict_response(mod_severity_CRBD_berries_top3, c("distance [all]","Shade_tree_species"), type = "zero_inflated") %>% 
-  as.data.frame %>%
-  mutate(type = "fixed + zif") -> dist_shade_zif
-predict_response(mod_severity_CRBD_berries_top3, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
-  as.data.frame %>%
-  mutate(type = "fixed") %>%
-  bind_rows(dist_shade_zif) %>%
-  ggplot() +
-  geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, fill = type), alpha= 0.5 )+
-  geom_line(aes(x = x, y = predicted, col = type))+
-  facet_wrap(~group) +
-  scale_y_continuous(limits = c(0,1))+
-  scale_color_simpsons() +
-  scale_fill_simpsons() +
-  main_theme
-
-
-predict_response(mod_severity_CRBD_berries_top3, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
-  plot
-
-predict_response(mod_severity_CRBD_berries_top3, c("Coffee_Variety"), type = "zero_inflated") %>%
-  as.data.frame %>%
-  mutate(type = "fixed + zif") -> coffee_var_zif
-predict_response(mod_severity_CRBD_berries_top3, c("Coffee_Variety"), type = "fixed") %>%
-  as.data.frame %>%
-  mutate(type = "fixed") %>%
-  bind_rows(coffee_var_zif) %>%
-  ggplot() +
-  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, col = type), 
-                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
-  scale_y_continuous(limits = c(0,1))+
-  scale_color_simpsons() +
-  scale_fill_simpsons() +
-  main_theme +
-  labs(x= "Variety", y = "severity") 
-
-
-```
-
-### 5.4 CWD severity model
-
-```{r}
+```{r include=FALSE}
 data_severity %>%
   filter(disease == "CWD") -> data_severity_CWD
 ```
 
 #### Top
 
-```{r}
+```{r results = 'hide'}
 # Models
 
 data_severity_CWD %>%
-  filter(portion =="Top") -> CWD_top
-
+  filter(portion =="Top", !is.na(severity)) %>%
+  mutate(severity = case_when(severity == 1 ~ severity*0.999,
+                              .default = severity))-> CWD_top
+nrow(CWD_top)
 CWD_top%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance + 
-                                            (1|sample_code)"),
+                                            (1|Section_of_Kaweri)"),
                     zifrml =  formula("~1")) -> mod_severity_CWD_top
 
 CWD_top%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety + 
-                                            (1|sample_code)"),
+                                            (1|Section_of_Kaweri)"),
                      zifrml =  formula("~1")) -> mod_severity_CWD_top2
 CWD_top%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety + 
-                                            (1|sample_code)"),
+                                            (1|Section_of_Kaweri)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_severity_CWD_top3
 
 CWD_top%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance  + 
-                                            (1|sample_code)"),
+                                            (1|Section_of_Kaweri)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_severity_CWD_top4
 CWD_top%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance  + 
-                                            (1|sample_code)"),
+                                            (1|Section_of_Kaweri)"),
                               zifrml = formula("~Shade_tree_species")) -> mod_severity_CWD_top5
-CWD_top%>%
-  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance  + Coffee_Variety+
-                                            (1|sample_code)"),
-                              zifrml = formula("~Shade_tree_species")) -> mod_severity_CWD_top6
+
 ```
 
 ```{r}
 # Select model
-AIC(mod_severity_CWD_top,mod_severity_CWD_top2, mod_severity_CWD_top3, mod_severity_CWD_top4,mod_severity_CWD_top5,mod_severity_CWD_top6) %>%
-    knitr::kable()
-# Anova
+AIC(mod_severity_CWD_top, mod_severity_CWD_top3, mod_severity_CWD_top4,mod_severity_CWD_top5) %>%
+  round(1) %>%
+  knitr::kable()
+
+# Anova Model 1
 Anova(mod_severity_CWD_top) %>%
   round(2) %>%
   knitr::kable()
-Anova(mod_severity_CWD_top, "III")
+Anova(mod_severity_CWD_top,component = "zi") %>%
+  round(2)
+Anova(mod_severity_CWD_top, "III")%>%
+  round(2)
+
+# Anova Model 5
 Anova(mod_severity_CWD_top5) %>%
   round(2)
 Anova(mod_severity_CWD_top5,component = "zi") %>%
+  round(2)
+Anova(mod_severity_CWD_top5, "III") %>%
   round(2)
 
 summary(mod_severity_CWD_top)
@@ -929,103 +600,107 @@ predict_response(mod_severity_CWD_top, c("distance[all]"), type = "fixed", margi
   main_theme
 ```
 
-##### more graph
-```{r}
-summary(mod_severity_CWD_top)
-
-
-
-predict_response(mod_severity_CWD_top, c("distance [all]","Shade_tree_species"), type = "zero_inflated") %>% 
-  as.data.frame %>%
-  mutate(type = "fixed + zif") -> dist_shade_zif
-
-
-predict_response(mod_severity_CWD_top, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
-  plot
-
-```
-
 ### 5.5 CLR severity model
 
-```{r}
+```{r include=FALSE}
 data_severity %>%
   filter(disease == "CLR") -> data_severity_CLR
-
-
-CWD_top %>%
-  mutate(Shade_tree_Canopy_Cover = scale(Shade_tree_Canopy_Cover)) -> CWD_top
-
-data_severity_CLR %>%
-  ggplot()+
-  facet_grid(rows = vars(Shade_tree_species), cols = vars(disease))+
-  geom_point(aes(distance,severity)) 
-
-data_severity_CLR %>%
-  ggplot()+
-  facet_grid(rows = vars(Shade_tree_species), cols = vars(portion))+
-  geom_boxplot(aes(Coffee_Variety,severity)) 
 ```
-
 #### Low
 
-```{r}
+```{r results = 'hide'}
 # Models
 data_severity_CLR %>%
-  filter(portion == "lower") -> CLR_low
+  filter(portion == "lower", !is.na(severity)) %>%
+  mutate(severity = case_when(severity == 1 ~ severity*0.999,
+                              .default = severity)) -> CLR_low
 
 CLR_low %>%
  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance + 
-                                            (1|Section_of_Kaweri/sample_code)"),
-                    zifrml =  formula("~1")) -> mod_severity_CLR_low
+                                            (1|Section_of_Kaweri)"),
+                   zifrml =  formula("~1")) -> mod_severity_CLR_low
 CLR_low %>%
  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance   + Coffee_Variety + 
-                                            (1|Section_of_Kaweri/sample_code)"),
-                              zifrml = formula("~1")) -> mod_severity_CLR_low2
+                                            (1|Section_of_Kaweri)"),
+                   zifrml = formula("~1")) -> mod_severity_CLR_low2
 CLR_low %>%
  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance    + Coffee_Variety+
-                                            (1|Section_of_Kaweri/sample_code)"),
-                              zifrml = formula("~Coffee_Variety")) -> mod_severity_CLR_low3
+                                            (1|Section_of_Kaweri)"),
+                   zifrml = formula("~Coffee_Variety")) -> mod_severity_CLR_low3
 CLR_low %>%
  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance    + 
-                                            (1|Section_of_Kaweri/sample_code)"),
-                              zifrml = formula("~Coffee_Variety")) -> mod_severity_CLR_low4
+                                            (1|Section_of_Kaweri)"),
+                   zifrml = formula("~Coffee_Variety")) -> mod_severity_CLR_low4
 
 CLR_low%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance  + 
-                                            (1|sample_code)"),
-                              zifrml = formula("~Shade_tree_species")) -> mod_severity_CLR_low5
+                                            (1|Section_of_Kaweri)"),
+                    zifrml = formula("~Shade_tree_species")) -> mod_severity_CLR_low5
 CLR_low%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance  + Coffee_Variety+
-                                            (1|sample_code)"),
-                              zifrml = formula("~Shade_tree_species")) -> mod_severity_CLR_low6
+                                            (1|Section_of_Kaweri)"),
+                    zifrml = formula("~Shade_tree_species")) -> mod_severity_CLR_low6
+
+CLR_low %>%
+ severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance    + Coffee_Variety +
+                                            (1|Section_of_Kaweri)"),
+                    zifrml = formula("~Coffee_Variety"),
+                    disprml =formula("~Coffee_Variety") ) -> mod_severity_CLR_low7
+CLR_low %>%
+ severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance     +
+                                            (1|Section_of_Kaweri)"),
+                    zifrml = formula("~1"),
+                    disprml =formula("~Coffee_Variety") ) -> mod_severity_CLR_low8
+
+CLR_low %>%
+ severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance    +Coffee_Variety*distance+
+                                            (1|Section_of_Kaweri)"),
+                    zifrml = formula("~Coffee_Variety"),
+                    disprml =formula("~log_total_count") ) -> mod_severity_CLR_low9
+CLR_low %>%
+ severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance    +Coffee_Variety*distance+
+                                            (1|Section_of_Kaweri)"),
+                    zifrml = formula("~Coffee_Variety"),
+                    disprml =formula("~log_total_count + Coffee_Variety") ) -> mod_severity_CLR_low10
+CLR_low %>%
+ severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance    + Coffee_Variety*distance+ 
+                                            (1|Section_of_Kaweri)"),
+                    zifrml = formula("~Coffee_Variety*distance"),
+                    disprml =formula("~Coffee_Variety*distance") ) -> mod_severity_CLR_low11
+
+
 ```
 
 
 ```{r}
-
 # Anova
-Anova(mod_severity_CLR_low3) %>%
+Anova(mod_severity_CLR_low10) %>%
   round(2) %>%
   knitr::kable()
-Anova(mod_severity_CLR_low3,component = "zi") %>%
-  round(2) %>%
-  knitr::kable()
-summary(mod_severity_CLR_low3)
+Anova(mod_severity_CLR_low10,3)
 
+Anova(mod_severity_CLR_low10,component = "zi") %>%
+  round(2) %>%
+  knitr::kable()
+Anova(mod_severity_CLR_low10,component = "disp") %>%
+  round(2) %>%
+  knitr::kable()
+
+summary(mod_severity_CLR_low10)
+
+## Zero inflation
 ### Pairwise comparison variety
-pwc_CLR <- emmeans(mod_severity_CLR_low3, ~Coffee_Variety, component = 'response')
-
-summary(pwc_CLR) 
-
-pairs(pwc_CLR)
-multcomp::cld(pwc_CLR, Letter = "abcdefg") %>%
+pwc_CLR_zi <- emmeans(mod_severity_CLR_low10, ~Coffee_Variety, component = 'zi')
+pairs(pwc_CLR_zi)
+multcomp::cld(pwc_CLR_zi, Letter = "abcdefg") %>%
   as.data.frame() %>%
-  dplyr::select(Coffee_Variety, .group) -> compl_letter 
+  dplyr::select(Coffee_Variety, .group) -> compl_letter_zi 
 
 ### Variety
-predict_response(mod_severity_CLR_low3, c("Coffee_Variety"), type = "zero_inflated") %>%
+predict_response(mod_severity_CLR_low10, c("Coffee_Variety"), type = "zi_prob") %>%
   as.data.frame %>%
-  left_join(compl_letter, by = join_by(x == Coffee_Variety)) %>%
+  left_join(compl_letter_zi, by = join_by(x == Coffee_Variety)) %>%
+  mutate(x = factor(x, level = compl_letter_zi$Coffee_Variety)) %>%
   ggplot() +
   geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high,), 
                   linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
@@ -1034,53 +709,73 @@ predict_response(mod_severity_CLR_low3, c("Coffee_Variety"), type = "zero_inflat
   main_theme +
   labs(x= "Variety", y = "severity CLR") 
 
-### Distance
-predict_response(mod_severity_CLR_low3, c("distance[all]"), margin = "marginalmeans") %>%
+## Fixed effect
+### Pairwise comparison variety
+pwc_CLR_fixed <- emmeans(mod_severity_CLR_low10, ~Coffee_Variety|distance, component = 'cond')
+pairs(pwc_CLR_fixed)
+multcomp::cld(pwc_CLR_fixed, Letter = "abcdefg") %>%
+  as.data.frame() %>%
+  dplyr::select(Coffee_Variety, .group) -> compl_letter_fixed
+
+### Variety
+predict_response(mod_severity_CLR_low10, c("Coffee_Variety"), type = "fixed") %>%
+  as.data.frame %>%
+  left_join(compl_letter_fixed, by = join_by(x == Coffee_Variety)) %>%
+  mutate(x = factor(x, level = compl_letter_fixed$Coffee_Variety)) %>%
+  ggplot() +
+  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high,), 
+                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
+  geom_text(aes(label = .group, x = x, y = 0.5), size = 5, vjust = 0) +
+  scale_y_continuous(limits = c(0,0.5))+
+  main_theme +
+  labs(x= "Variety", y = "severity CLR") 
+
+## response
+pwc_CLR <- emmeans(mod_severity_CLR_low10, ~Coffee_Variety|distance, component = 'response')
+pairs(pwc_CLR)
+multcomp::cld(pwc_CLR, Letter = "abcdefg") %>%
+  as.data.frame() %>%
+  dplyr::select(Coffee_Variety, .group) -> compl_letter 
+
+### Variety
+predict_response(mod_severity_CLR_low10, c("Coffee_Variety"), type = "zero_inflated") %>%
+  as.data.frame %>%
+  left_join(compl_letter, by = join_by(x == Coffee_Variety)) %>%
+  mutate(x = factor(x, level = compl_letter$Coffee_Variety)) %>%
+  ggplot() +
+  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high,), 
+                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
+  geom_text(aes(label = .group, x = x, y = 0.5), size = 5, vjust = 0) +
+  scale_y_continuous(limits = c(0,0.5))+
+  main_theme +
+  labs(x= "Variety", y = "severity CLR") 
+
+### variety interaction distance (partial effect of distance and Coffee_Variety)
+
+emtrends(mod_severity_CLR_low10, pairwise ~ Coffee_Variety, var = "distance")
+emmip(mod_severity_CLR_low10, Coffee_Variety ~ distance, cov.reduce = range)
+
+predict_response(mod_severity_CLR_low10, c("distance [all]", "Coffee_Variety"), type = "fixed") %>%
   as.data.frame %>%
   ggplot() +
+    facet_wrap(~group)+
+  geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high), alpha= 0.5) +
+
+  geom_line(aes(x = x, y = predicted)) +
+  scale_y_continuous(limits = c(0,1)) +
+  labs(x = "Distance", y= "CLR severity") +
+  main_theme
+
+##
+### Distance
+predict_response(mod_severity_CLR_low10, c("distance[all]"),  type = "fixed", margin = "marginalmeans") %>%
+  as.data.frame %>%
+  ggplot() +
+ 
   geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high), alpha= 0.5) +
 
   geom_line(aes(x = x, y = predicted)) +
   scale_y_continuous(limits = c(0,0.4)) +
   labs(x = "Distance", y= "CLR severity") +
   main_theme
-```
-
-##### more graph
-
-```{r}
-predict_response(mod_severity_CLR_low3, c("distance [all]","Shade_tree_species"), type = "zero_inflated") %>% 
-  as.data.frame %>%
-  mutate(type = "fixed + zif") -> dist_shade_zif
-
-predict_response(mod_severity_CLR_low3, c("distance [all]","Shade_tree_species"), type = "fixed") %>%
-  as.data.frame %>%
-  mutate(type = "fixed") %>%
-  bind_rows(dist_shade_zif) %>%
-  ggplot() +
-  geom_ribbon(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, fill = type), alpha= 0.5 )+
-  geom_line(aes(x = x, y = predicted, col = type))+
-  facet_wrap(~group) +
-  scale_y_continuous(limits = c(0,1))+
-  main_theme
-
-
-predict_response(mod_severity_CLR_low3, c("distance [all]"), type = "fixed") %>%
-  plot
-
-predict_response(mod_severity_CLR_low3, c("Coffee_Variety"), type = "zero_inflated") %>%
-  as.data.frame %>%
-  mutate(type = "fixed + zif") -> coffee_var_zif
-predict_response(mod_severity_CLR_low3, c("Coffee_Variety"), type = "fixed") %>%
-  as.data.frame %>%
-  mutate(type = "fixed") %>%
-  bind_rows(coffee_var_zif) %>%
-  ggplot() +
-  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, col = type), 
-                  linetype =1, cex = 0.5, linewidth = 1, position = position_dodge(width = .2)) +
-  scale_y_continuous(limits = c(0,1))+
-  scale_color_simpsons() +
-  scale_fill_simpsons() +
-  main_theme +
-  labs(x= "Variety", y = "severity") 
 ```
