@@ -14,6 +14,9 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 # 1 Load Packages
 
 ```{r include=FALSE}
+
+library(performance)
+library(modelbased)
 library(tidyverse)
 library(readxl)
 library(ggsci)
@@ -57,6 +60,7 @@ data <- read_xlsx("data/R_PhD_Data_corrected2.xlsx")
 data %>% filter(is.na(Shade_tree_Canopy_Cover))
 data %>%
   rename(sample_code = "Coffee_soil _sample_CODE") %>%
+  # change sample names format
   mutate(sample_code = paste(sample_code,
                              str_extract(Section_of_Kaweri, "^[a-zA-Z]{4}"), sep = "_"),
          Shade_tree_soil_sample_CODE = paste(Shade_tree_soil_sample_CODE,
@@ -67,7 +71,7 @@ data %>%
                                         Shade_tree_species == "Persea americana" ~ "Pa"))-> data
 
 
-
+# Isolate covariate from the main dataframe
 covariate_data <- data %>%
   dplyr::select(Shade_tree_species, Section_of_Kaweri, sample_code, Coffee_Variety,
          Actual_distance_from_shade_tree_m, Shade_tree_soil_sample_CODE) %>% 
@@ -75,6 +79,7 @@ covariate_data <- data %>%
                                     .default = Coffee_Variety))
 
  data %>% 
+   # Select incidence columns 
   dplyr::select(sample_code, starts_with("inc"), starts_with("Inc")) %>%
   pivot_longer(-sample_code, values_to = "value", names_to = "value_type") %>%
   mutate(
@@ -93,9 +98,12 @@ covariate_data <- data %>%
     # change "Incidence"  to "incidence")
     value_type = str_replace_all(value_type, "Incidence", "incidence")
   ) %>%
+  # some value are above 1,  correct that:
   mutate(value = ifelse(value>=1,1,0 )) %>%
   left_join(covariate_data, by = "sample_code") %>%
-  group_by(sample_code, disease) %>% # sample code are the ID to individual coffee tree
+  # sample code are the ID to individual coffee tree. I compute the incidence en the coffee shrub level and 
+  # summarize the covariate at the same time
+  group_by(sample_code, disease) %>% 
   summarise(true_incidence = ifelse(sum(value, na.rm = T)>=1,1,0), # 0 occurrence = 0 ; 1 to 12 occurrence = 1
             n =  n(),
             distance = unique(Actual_distance_from_shade_tree_m),
@@ -103,6 +111,7 @@ covariate_data <- data %>%
             Shade_tree_soil_sample_CODE = unique(Shade_tree_soil_sample_CODE),
             Coffee_Variety = unique(Coffee_Variety)) %>%
    ungroup() %>%
+   # exctract the section name and mutate character colum to factor
    mutate(Section_of_kawerie = str_extract(sample_code,"(?<=_).+"),
           across(where(is.character), ~as.factor(.x)))-> data_incidence
 ```
@@ -156,13 +165,14 @@ number_of_infected_leaves_or_berries %>%
   rename(distance = "Actual_distance_from_shade_tree_m") %>%
   mutate(distance_class = cut(
       distance,
-      breaks = c(0, 8, 16, 24),  # Specify the breakpoints
+      breaks = c(0, 8, 16, 24),  # Specify the breakpoints for distance class
       labels = c("[0-8]", "(8-16]", "(16-22]"),  # Labels for each range
       right = F), # Indicates whether intervals are right-closed
     total_count = case_when(total_count > 250 ~ round(total_count/10), # correct error (5 branch have more than 150 leaves -> error due to one digit added when tipping)
                             .default = total_count),
     log_total_count = log(total_count),
     across(where(is.character),~as.factor(.x))) -> data_severity
+
 ## Tree with no leaves (to remove)
 data_severity%>%
   group_by(sample_code)%>%
@@ -286,19 +296,24 @@ data_severity %>%
 # 3 Incidence model
 ### 3.2 CWD incidence data
 ```{r}
+# Create a function that take input for a glm creation. Give back the model and residuals informations.
 incidence.mod.func <- function(data, 
-                              frml){
- 
+                              frml){ # Formula for fixed effect of the models
+  # Compute the model
   mod_severity <-  glmmTMB(formula = formula(frml),
-                              family = binomial(),
+                              family = binomial(),# Incidence is 1 or 0 (win or lose trial) => binomial family
                               data = data)
-
+  # Compute residuals
   res_severity <- DHARMa::simulateResiduals(mod_severity, plot = TRUE)
 
 
   par(mfrow = c(2, 3))
+  
+  # Plot to check if dispersion term or zero inflation term is needed
   testDispersion(res_severity)
   testZeroInflation(res_severity)
+  
+  # Plot residuals against some variables
   plotResiduals(res_severity, form = data$distance )
   plotResiduals(res_severity, form = data$Shade_tree_species)
   plotResiduals(res_severity, form = data$Section_of_kawerie)
@@ -309,8 +324,11 @@ incidence.mod.func <- function(data,
 }
 ```
 
-#### Shade tree
+#### Compute models
 
+Try different model, the only constrain is that we keep "distance*Shade_tree_species + (1|Shade_tree_soil_sample_CODE)" .
+"distance*Shade_tree_species" : are main effect and interaction in which we are interested 
+"Shade_tree_soil_sample_CODE" : mixte effect to correct autocorrelation at the shade tree level. Because quantity of infected shrubs influenced around a shade tree due to variable that act locally and that we don't control.
 ```{r}
 
 data_incidence %>%
@@ -334,7 +352,8 @@ binary_data_CWD %>%
   incidence.mod.func(frml = "true_incidence ~ Shade_tree_species * distance * Coffee_Variety +
                                     + (1|Shade_tree_soil_sample_CODE)") -> mod_binary_incidence_CWD5
 ```
-We could do a model with a interacdtion with all the variable (Shade_tree_species * distance * Coffee_Variety). It work but a 3 interaction term require to estimate à large quantity of parameter. I don't think we have enough data to estimate well those parameters.
+We could do a model with a interaction with all the variable (Shade_tree_species * distance * Coffee_Variety). It work but a 3 interaction term require to estimate à large quantity of parameter. I don't think we have enough data (of incidence) to estimate well those parameters.
+
 ```{r}
 AIC(mod_binary_incidence_CWD1,
     mod_binary_incidence_CWD2,
@@ -351,13 +370,51 @@ AIC(mod_binary_incidence_CWD1,
 car::Anova(mod_binary_incidence_CWD2, 2) %>%
   round(2)
 car::Anova(mod_binary_incidence_CWD2, 3)
+
+r2_nakagawa(mod_binary_incidence_CWD2)
+summary(mod_binary_incidence_CWD2)
 ```
 
 Tendency of Coffee variety on Incidence of CWD, I'm doing a postHoc pairwise comparison to see if there are some difference between varieties.
 
+#### Plot results
+
 ```{r}
-# Here I'm using "interactions" package instead of "ggeffect." When we predict the full model "ggeffect" don't separate partial residual depending on the 
-# variety and the shade tree specie (see plot commented above to compare)
+# Function to get significance letter from a contrast dataframe (pairwise comparison dataframe)
+get_significance_letters <- function(contrast_df, alpha = 0.05, level_col1 = "Level1", level_col2 = "Level2", p_col = "p") {
+  # Extract levels
+  all_levels <- unique(c(as.character(contrast_df[[level_col1]]), as.character(contrast_df[[level_col2]])))
+
+  # Initialize an empty matrix of p-values
+  pmat <- matrix(NA, nrow = length(all_levels), ncol = length(all_levels),
+                 dimnames = list(all_levels, all_levels))
+
+  # Fill in the matrix with provided p-values
+  for (i in seq_len(nrow(contrast_df))) {
+    l1 <- as.character(contrast_df[[level_col1]][i])
+    l2 <- as.character(contrast_df[[level_col2]][i])
+    pval <- contrast_df[[p_col]][i]
+    pmat[l1, l2] <- pval
+    pmat[l2, l1] <- pval
+  }
+  # Generate letters using multcompView
+  comp <- multcompView::multcompLetters(pmat<0.05,compare = "<")$Letters
+
+  # Prepare output dataframe
+  output <- data.frame(
+    variable = factor(names(comp), levels = all_levels),
+    .group = comp,
+    stringsAsFactors = FALSE
+  )
+
+  return(output)
+}
+```
+
+
+```{r}
+# Here I'm using "interactions" package instead of "ggeffect." When we predict the full model "ggeffect" don't separate partial residual depending, I don't know why. 
+
 interactions::interact_plot(mod_binary_incidence_CWD2, pred = distance, modx =Shade_tree_species ,
               mod2 =Coffee_Variety,
               colors = "Set1",
@@ -380,8 +437,9 @@ interactions::interact_plot(mod_binary_incidence_CWD2, pred = distance, modx =Sh
         panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
         axis.title.x = element_text(colour = "black", size=14, face="italic")) -> p1
 
-# Now I'm using "ggeffect" to average prediction across all factors (with margin = empirical, see package description for more details). "interactions" can only make prediction by fixing non used predictor to the fist level for factor variable
-predict_response(mod_binary_incidence_CWD2, c("distance[all]", "Shade_tree_species"), margin = "empirical") %>%
+# "interactions"  package can only make prediction by fixing non used predictor to the fist level for factor variable so now I'm using "ggeffect" to average prediction across all factors (with margin = empirical, see package description for more details).
+
+ggeffects::predict_response(mod_binary_incidence_CWD2, c("distance[all]", "Shade_tree_species"), margin = "empirical") %>% 
   plot(show_data =T,show_ci=T, show_title = F,
         dot_size  = 3, 
         dot_alpha = 0.4,
@@ -397,7 +455,7 @@ predict_response(mod_binary_incidence_CWD2, c("distance[all]", "Shade_tree_speci
         panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
         axis.title.y = element_text(colour = "black", size=14, face="italic")) -> p2
 
-predict_response(mod_binary_incidence_CWD2, c("distance[all]", "Coffee_Variety"), margin = "empirical") %>%
+ggeffects::predict_response(mod_binary_incidence_CWD2, c("distance[all]", "Coffee_Variety"), margin = "empirical") %>%
   plot(show_data =T,show_ci=T, show_title = F,
         colors = rep("black", 6),
         dot_size  = 3, 
@@ -415,7 +473,7 @@ predict_response(mod_binary_incidence_CWD2, c("distance[all]", "Coffee_Variety")
         axis.text = element_blank(),
         panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)) -> p3
 
-predict_response(mod_binary_incidence_CWD2, c("distance[all]"), margin = "empirical") %>%
+ggeffect::predict_response(mod_binary_incidence_CWD2, c("distance[all]"), margin = "empirical") %>%
   plot(show_data =T,show_ci=T, show_title = F,
         dot_size  = 3, 
         dot_alpha = 0.4,
@@ -430,20 +488,25 @@ predict_response(mod_binary_incidence_CWD2, c("distance[all]"), margin = "empiri
         panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)) -> p4
 
 
-pwc_CWD_inc <- emmeans(mod_binary_incidence_CWD2, ~Coffee_Variety, component = 'response')
-pairs(pwc_CWD_inc)
-str(pwc_CWD_inc)
-multcomp::cld(modelbased::get_emmeans(mod_binary_incidence_CWD2, by = "Coffee_Variety"), Letter = letters,decreasing = T) %>%
-  as.data.frame() %>%
-  dplyr::select(Coffee_Variety, .group) %>%
-  mutate(x= as.numeric(Coffee_Variety))-> compl_letter_CWD_inc
 
-predict_response(mod_binary_incidence_CWD2, c("Coffee_Variety"), margin = "empirical") %>%
-  plot(show_residuals =F,show_ci=T, show_title = F,
-        dot_size  = 1.5, 
-        dot_alpha = 0.2,
-        line_size  = 1) +
-  geom_text(data = compl_letter_CWD_inc, aes(x = x, y =0.95, label = .group), vjust = 0) +
+modelbased::estimate_contrasts(mod_binary_incidence_CWD2 ,
+                               "Coffee_Variety", estimate = "typical", p_adjust = "fdr") -> contrast_incidence_variety_df
+
+get_significance_letters(contrast_incidence_variety_df) %>%
+  mutate(variable = factor(variable , levels = levels(data_incidence$Coffee_Variety))) %>%
+  arrange(variable) %>%
+  mutate(x= as.numeric(variable))-> compl_letter_incidence_var
+
+modelbased::estimate_means(mod_binary_incidence_CWD2,"Coffee_Variety",estimate = "typical") -> incidence_variety
+
+incidence_variety %>% 
+  as.data.frame() %>%
+  ggplot() +
+    geom_pointrange(
+    aes(x= Coffee_Variety , y = Probability , ymin = CI_low, ymax = CI_high),
+    size = 0.75,linewidth = 1
+  ) +
+  geom_text(data = compl_letter_incidence_var, aes(x = x, y =0.95, label = .group), vjust = 0) +
   scale_y_continuous(limits = c(0,1)) +
   labs(x= "Coffee Varieties", y = "Incidence probability") +
   theme_classic() +
@@ -456,6 +519,7 @@ predict_response(mod_binary_incidence_CWD2, c("Coffee_Variety"), margin = "empir
         legend.text = element_text(colour = "black", size=18),
         axis.title= element_text(size=16,face="bold"),
         strip.text = element_text(colour = "black", size=15, face ="italic")) -> p5
+
 p5
 
 layout <- c(
@@ -466,18 +530,10 @@ layout <- c(
 )
 p4 + p1 + p2 + p3+
   plot_layout(design = layout)
-# # 
-# # #pairwise comparison coffee var
-# predict_response(mod_binary_incidence_CWD2, c("Coffee_Variety"), margin = "empirical") %>%
-#   test_predictions(test = "contrast")
-# modelbased::get_emmeans(mod_binary_incidence_CWD2, by = "Coffee_Variety")
-# #Slope pairwise comparison shade tree
- modelbased::estimate_slopes(mod_binary_incidence_CWD2, trend = "distance", by = "Shade_tree_species")
-# test_predictions(mod_binary_incidence_CWD2, c("distance", "Shade_tree_species"), margin = "empirical", test = "trend") %>% as.data.frame()
 
+#Slope pairwise comparison shade tree
+modelbased::estimate_slopes(mod_binary_incidence_CWD2, trend = "distance", by = "Shade_tree_species")
 
-test(emtrends(mod_binary_incidence_CWD2, ~ Shade_tree_species,
-               var = "distance"))
 layout2 <- c(
   area(t = 0, l = 0, b =10, r = 3.5),
   area(t = 0, l = 2, b = 10, r = 10)
@@ -509,6 +565,7 @@ data_incidence %>%
   scale_fill_startrek() +
   labs(x = " Shade tree", y = "Proportion", fill = "Incidence") +
   main_theme
+
 data_incidence %>%
   filter( disease == "CWD") %>%
   group_by(Shade_tree_species, Coffee_Variety) %>%
@@ -581,7 +638,7 @@ data_incidence %>%
 
 # 4 Severity model
 
-## Severity correlation between diseases
+## 4.1 Severity correlation between diseases
 
 ```{r echo=FALSE}
 data_severity %>%
@@ -607,6 +664,11 @@ data_severity %>%
         panel.border = element_rect(colour = "black", fill = NA, linewidth = 1))
 ```
 
+
+
+
+
+### 4.2  severity model and residual function
 ```{r include=FALSE}
 
 severity.mod.func <- function(data, 
@@ -638,7 +700,7 @@ severity.mod.func <- function(data,
 
 ```
 
-## 4.2 CRBD LEAVES severity model
+## 4.3 CRBD LEAVES severity model
 
 ```{r include=FALSE}
 data_severity %>%
@@ -651,7 +713,7 @@ data_severity_CRBD_leaves %>%
   geom_point(aes(x = log_total_count, y = severity))
 ```
 
-### Top portion
+### Compute models
 
 ```{r include=FALSE}
 data_severity_CRBD_leaves %>%
@@ -742,6 +804,8 @@ CRBD_leaves_top%>%
                                             (1|Shade_tree_soil_sample_CODE)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~Coffee_Variety")) -> mod_severity_CRBD_leaves_top15
+
+## Some models I've tested, either bad residuals or to complex to interpret
 # CRBD_leaves_top%>%
 #   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance+
 #                                             (1|Shade_tree_soil_sample_CODE)"),
@@ -780,15 +844,10 @@ CRBD_leaves_top%>%
 
 
 Coffee variety or log(total leaf) are mandatory to correct for dispersion
-**the model :**
 
--   **Formula:severity_CRBD \~ Shade_tree_species \* distance + (1 \| Section_of_Kaweri)** -
--   **Zero inflation : \~Coffee_Variety**
--   **Dispersion : \~Coffee_Variety**
--   **family:beta_family()**
+### Model selection
 
 ```{r}
-
 AIC(mod_severity_CRBD_leaves_top5,
     mod_severity_CRBD_leaves_top6,
     #mod_severity_CRBD_leaves_top7,
@@ -800,7 +859,11 @@ AIC(mod_severity_CRBD_leaves_top5,
     mod_severity_CRBD_leaves_top11,
     mod_severity_CRBD_leaves_top12,
     mod_severity_CRBD_leaves_top13)
+```
 
+### Model's estimations
+
+```{r}
 # Anova
 Anova(mod_severity_CRBD_leaves_top6) %>%
   round(2)
@@ -809,33 +872,38 @@ Anova(mod_severity_CRBD_leaves_top6, 3) %>%
 
 Anova(mod_severity_CRBD_leaves_top6, component = "zi") 
 
-Anova(mod_severity_CRBD_leaves_top6, component = "disp") 
+Anova(mod_severity_CRBD_leaves_top6, component = "disp")
+r.squaredGLMM(mod_severity_CRBD_leaves_top6)
+r2_nakagawa(mod_severity_CRBD_leaves_top6,
+            null_model =   glmmTMB(formula = severity~1,
+                              ziformula = ~0,
+                              
+                              family = beta_family(),
+                              #weights = total_count ,
+                              data = CRBD_leaves_top))
+summary(mod_severity_CRBD_leaves_top6)
+```
 
-pwc_CRBD <- emmeans(mod_severity_CRBD_leaves_top6, ~Coffee_Variety, component = 'response')
 
-multcomp::cld(pwc_CRBD, Letter = letters,decreasing = F) %>%
-  as.data.frame() %>%
-  dplyr::select(Coffee_Variety, .group) %>%
-  mutate(x= as.numeric(Coffee_Variety))-> compl_letter_crbd_sev
+```{r}
+modelbased::estimate_contrasts(mod_severity_CRBD_leaves_top6,"Coffee_Variety",estimate = "typical", p_adjust = "fdr") -> contrast_CRBD_severity_variety_df
+get_significance_letters(contrast_CRBD_severity_variety_df) %>%
+  mutate(variable = factor(variable , levels = levels(CRBD_leaves_top$Coffee_Variety))) %>%
+  arrange(variable) %>%
+  mutate(x= as.numeric(variable))-> compl_letter_CRBD_severity_var
 
-predict_response(mod_severity_CRBD_leaves_top6, c("Coffee_Variety"), type = "response", margin = "empirical") -> CRBD_severity_variety
-
-CRBD_severity_variety %>%
-   plot(show_residuals =F,show_ci=T, show_title = F,
-        dot_size  = 2, 
-        dot_alpha = 0.03,
-        line_size  = 1) +
-  geom_text(data = compl_letter_crbd_sev, aes(x = x, y =0.15, label = .group), vjust = 0)+
-  scale_y_continuous(limits = c(0,0.16))+
+modelbased::estimate_means(mod_severity_CRBD_leaves_top6,"Coffee_Variety",estimate = "typical") -> CRBD_severity_variety
+ggplot(CRBD_severity_variety, aes(x = Coffee_Variety, y = Proportion)) +
+  geom_pointrange(aes(ymin = CI_low, ymax = CI_high), linewidth = 1) +
+   geom_text(data = compl_letter_CRBD_severity_var, aes(x = x, y =0.15, label = .group), vjust = 0)+
   labs(x= "Variety", y = "CRBD severity")+
   theme_classic()+
   theme(aspect.ratio = 1,
         axis.text.x = element_text(colour = "black", size=13, face="italic", angle = 18, vjust =1, hjust =1),
         axis.text.y = element_text(colour = "black", size=13, face="italic"),
         axis.title = element_text(colour = "black", size=16)) -> p_CRBD_severity_variety
- p_CRBD_severity_variety 
- predict_response(mod_severity_CRBD_leaves_top6, c("log_total_count[all]"), type = "disp", margin = "empirical") %>%
-   plot()
+
+p_CRBD_severity_variety
 ```
 
 -   **Coffee variety influence probability of CRBD lesion absence at the branch level**
@@ -843,14 +911,14 @@ CRBD_severity_variety %>%
 -   Shade trees doesn't influence significantly CRBD severity.
 -   Interaction between Shade trees and distance doesn't influence significantly CRBD severity.
 
-## 4.3 CWD severity model
+## 4.4 CWD severity model
 
 ```{r include=FALSE}
 data_severity %>%
   filter(disease == "CWD") -> data_severity_CWD
 ```
 
-### Top
+### Compute models
 
 ```{r include=FALSE}
 # Models
@@ -911,18 +979,7 @@ CWD_top%>%
                               disprml= formula("~log_total_count"))-> mod_severity_CWD_top10
 ```
 
--   **Model1:**
-    -   **Formula: severity_CWD \~ Shade_tree_species \* distance + (1 \| Section_of_Kaweri)**
-    -   **Zero inflation: \~1**
-    -   **family = beta_family()**
--   **Model4:**
-    -   **Formula: severity_CWD \~ Shade_tree_species \* distance + (1 \| Section_of_Kaweri)**
-    -   **Zero inflation: \~Coffee_Variety**
-    -   **family = beta_family()**
--   **Model5:**
-    -   **Formula: severity_CWD \~ Shade_tree_species \* distance + (1 \| Section_of_Kaweri)**
-    -   **Zero inflation: \~Shade_tree_species**
-    -   **family = beta_family()**
+### Model selection
 
 ```{r}
 # dplyr::select model
@@ -933,7 +990,7 @@ AIC(mod_severity_CWD_top,
     mod_severity_CWD_top8) %>%
   round(1)
 ```
-
+### Model's estimations
 
 ```{r}
 # Anova Model 4
@@ -973,28 +1030,24 @@ predict_response(mod_severity_CWD_top8, c("distance[all]", "Coffee_Variety"), ty
 temp %>% plot(show_data = F) +
   facet_wrap(~group)
 
-pwc_cwd <- emmeans(mod_severity_CWD_top8, ~Coffee_Variety, component = 'response')
 
-multcomp::cld(pwc_cwd, Letter = letters,decreasing = F) %>%
-  as.data.frame() %>%
-  dplyr::select(Coffee_Variety, .group) %>%
-  mutate(x= as.numeric(Coffee_Variety))-> compl_letter_cwd_sev
+modelbased::estimate_contrasts(mod_severity_CWD_top8,"Coffee_Variety",estimate = "typical", p_adjust = "fdr") -> contrast_CWD_severity_variety_df
+get_significance_letters(contrast_CWD_severity_variety_df) %>%
+  mutate(variable = factor(variable , levels = levels(data_severity_CWD$Coffee_Variety))) %>%
+  arrange(variable) %>%
+  mutate(x= as.numeric(variable))-> compl_letter_CWD_severity_var
 
-predict_response(mod_severity_CWD_top8, c("Coffee_Variety"), type = "response", margin = "empirical") -> CWD_severity_variety
-
-CWD_severity_variety%>%
-   plot(show_data =F,show_ci=T, show_title = F,
-        dot_size  = 2, 
-        dot_alpha = 0.03,
-        line_size  = 1) +
-  geom_text(data = compl_letter_cwd_sev, aes(x = x, y =0.06, label = .group), vjust = 0)+
-  scale_y_continuous(limits = c(0,0.061))+
+modelbased::estimate_means(mod_severity_CWD_top8,"Coffee_Variety",estimate = "typical") -> CWD_severity_variety
+ggplot(CWD_severity_variety, aes(x = Coffee_Variety, y = Proportion)) +
+  geom_pointrange(aes(ymin = CI_low, ymax = CI_high), linewidth = 1) +
+   geom_text(data = compl_letter_CWD_severity_var, aes(x = x, y =0.05, label = .group), vjust = 0)+
   labs(x= "Variety", y = "CWD severity")+
   theme_classic()+
   theme(aspect.ratio = 1,
         axis.text.x = element_text(colour = "black", size=13, face="italic", angle = 18, vjust =1, hjust =1),
         axis.text.y = element_text(colour = "black", size=13, face="italic"),
         axis.title = element_text(colour = "black", size=16)) -> p_CWD_severity_variety
+
 p_CWD_severity_variety
 ```
 
@@ -1005,7 +1058,7 @@ AIC of model 1 4 and 5 aren't different enough to conclude which model is the mo
 -   Shade trees doesn't influence significantly CWD severity.
 -   Interaction between Shade trees and distance doesn't influence significantly CWD severity.
 
-## 5.5 CLR severity model
+## 4.5 CLR severity model
 
 ```{r include=FALSE}
 data_severity %>%
@@ -1014,7 +1067,7 @@ data_severity %>%
   mutate(Coffee_Variety = as.factor(as.character(Coffee_Variety)))-> data_severity_CLR
 ```
 
-### Low
+### Compute models
 
 ```{r include=FALSE}
 # Models
@@ -1078,6 +1131,7 @@ CLR_low %>%
                     zifrml = formula("~Coffee_Variety"),
                     disprml =formula("~log_total_count") ) -> mod_severity_CLR_low11
 
+## Some models I've tested, either bad residuals or to complex to interpret
 # CLR_low %>%
 #  severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance *Coffee_Variety+
 #                                             (1|Shade_tree_soil_sample_CODE)"),
@@ -1106,27 +1160,7 @@ CLR_low %>%
 
 ```
 
-
-log(total leaf) and coffee variety respectively as dispersion term and zero inflation term mandatory for good residuals
--   **Model:**
-    -   **Formula:severity_CLR \~ Shade_tree_species \* distance + Coffee_Variety \* distance + (1 \| Section_of_Kaweri)**
-    -   **Zero inflation:\~Coffee_Variety**
-    -   **Dispersion:\~log_total_count + Coffee_Variety**
-    -   **family:beta_family()**
-
-**Using "log_total_count+ Coffee_Variety" in dispersion :**
-
--   For total number of leaves : it may influence severity variance the folowing way :
-    -   *tot_leaves = 100 infected_leave=50 : severity= 50% -\> if you add 1 infected leave : severity = 51%*
-    -   *tot_leaves = 10 infected_leave=5 : severity= 50% -\> if you add 1 infected leave : severity = 60%*
-
-There is probably more variance of severity with a low number of leaves. For the 2 other disease (CRBD and CWD) beta_family distribution was able to tackle this variance, but for CLR it is to much thus we need to correct this effect with a dispersion parameter of "log_total_count".
-
--   Some Coffee variety could have different disease tolerance type that are effective or not depending the individuals resulting in a higher variance of severity. Other variety for which all individuals are either full tolerant or full sensible would have much less variance.
-
--   **"Coffee_Variety\*distance" is the only way to have correct residuals for CLR models :**
-
-    -   Coffee variety could react differently if they are close or far from a shade tree
+### Model selection
 
 ```{r}
 AIC(mod_severity_CLR_low8,mod_severity_CLR_low10)
@@ -1139,6 +1173,8 @@ Anova(mod_severity_CLR_low8,component = "disp") %>%
   round(2)
 
 ```
+
+### Model's estimation
 
 ```{r}
 predict_response(mod_severity_CLR_low8, c("distance[all]", "Shade_tree_species","Coffee_Variety"),
@@ -1222,53 +1258,52 @@ prediction_clr_dist %>%
 
 
 ```{r}
-pwc_clr_sev <- emmeans(mod_severity_CLR_low8, ~Coffee_Variety, component = 'response')
-pairs(pwc_clr_sev)
-multcomp::cld(pwc_clr_sev, Letter = "abcdefg") %>%
-  as.data.frame() %>%
-  dplyr::select(Coffee_Variety, .group) %>%
-  mutate(x = as.numeric(Coffee_Variety))-> compl_letter_clr_sev
+modelbased::estimate_contrasts(mod_severity_CLR_low8,"Coffee_Variety",estimate = "typical", p_adjust = "fdr") -> contrast_CLR_severity_variety_df
+get_significance_letters(contrast_CLR_severity_variety_df) %>%
+  mutate(variable = factor(variable , levels = levels(data_severity_CLR$Coffee_Variety))) %>%
+  arrange(variable) %>%
+  mutate(x= as.numeric(variable))-> compl_letter_CLR_severity_var
 
-
-predict_response(mod_severity_CLR_low8, c("Coffee_Variety"), margin = "empirical", type = "zero_inflated") -> CLR_severity_variety
-
+modelbased::estimate_means(mod_severity_CLR_low8,"Coffee_Variety",estimate = "typical") -> CLR_severity_variety
 CLR_severity_variety %>%
-  plot(show_data =F,show_ci=T, show_title = F,
-        dot_size  = 2, 
-        dot_alpha = 0.03,
-        line_size  = 1) +
+  ggplot(aes(x = Coffee_Variety, y = Proportion)) +
+  geom_pointrange(aes(ymin = CI_low, ymax = CI_high), linewidth = 1) +
   scale_y_continuous(limits = c(0,0.5))+
-  geom_text(data = compl_letter_clr_sev, aes(x = x, y =0.45, label = .group), vjust = 0)+
-  labs(x= "Varieties", y = "CLR severity")+
+  geom_text(data = compl_letter_CLR_severity_var, aes(x = x, y =0.45, label = .group), vjust = 0)+
+  labs(x= "Variety", y = "CLR severity")+
   theme_classic()+
   theme(aspect.ratio = 1,
         axis.text.x = element_text(colour = "black", size=13, face="italic", angle = 18, vjust =1, hjust =1),
         axis.text.y = element_text(colour = "black", size=13, face="italic"),
         axis.title = element_text(colour = "black", size=16)) -> p_CLR_severity_variety
+
+p_CLR_severity_variety
+
 ```
 
 
 ```{r}
-pwc_clr_sev2 <- emmeans(mod_severity_CLR_low8, ~Shade_tree_species, component = 'response')
-pairs(pwc_clr_sev2)
-multcomp::cld(pwc_clr_sev2, Letter = "abcdefg") %>%
-  as.data.frame() %>%
-  dplyr::select(Shade_tree_species, .group) %>%
-  mutate(x = as.numeric(Shade_tree_species))-> compl_letter_clr_sev2
+modelbased::estimate_contrasts(mod_severity_CLR_low8, "Shade_tree_species", estimate = "typical", p_adjust = "fdr") -> contrast_CLR_severity_shade_df
+get_significance_letters(contrast_CLR_severity_shade_df) %>%
+  mutate(variable = factor(variable , levels = levels(data_severity_CLR$Shade_tree_species))) %>%
+  arrange(variable) %>%
+  mutate(x= as.numeric(variable))-> compl_letter_CLR_severity_shade
 
-predict_response(mod_severity_CLR_low8, c("Shade_tree_species"), margin = "empirical", type = "zero_inflated") %>%
-  plot(show_data =F,show_ci=T, show_title = F,
-        dot_size  = 2, 
-        dot_alpha = 0.03,
-        line_size  = 1) +
+modelbased::estimate_means(mod_severity_CLR_low8,"Shade_tree_species",estimate = "typical") -> CLR_severity_shade
+CLR_severity_shade %>%
+  ggplot(aes(x = Shade_tree_species, y = Proportion)) +
+  geom_pointrange(aes(ymin = CI_low, ymax = CI_high), linewidth = 1) +
   scale_y_continuous(limits = c(0,0.5))+
-  geom_text(data = compl_letter_clr_sev2, aes(x = x, y =0.45, label = .group), vjust = 0)+
+  geom_text(data = compl_letter_CLR_severity_shade, aes(x = x, y =0.45, label = .group), vjust = 0)+
   labs(x= "Shade tree species", y = "CLR severity")+
   theme_classic()+
   theme(aspect.ratio = 1,
         axis.text.x = element_text(colour = "black", size=13, face="italic", angle = 18, vjust =1, hjust =1),
         axis.text.y = element_text(colour = "black", size=13, face="italic"),
-        axis.title = element_text(colour = "black", size=16)) -> p_CLR_severity_shade
+        axis.title = element_text(colour = "black", size=16)) -> p_CLR_severity_variety
+
+p_CLR_severity_variety
+
 ```
 
 
@@ -1342,14 +1377,24 @@ CWD_severity_variety%>%
 CLR_severity_variety%>%
   as.data.frame %>%
   mutate(disease = "CLR") -> CLR_sev_var_temp
+str(data_severity)
 CRBD_sev_var_temp %>%
   bind_rows(CWD_sev_var_temp) %>%
   bind_rows(CLR_sev_var_temp) %>%
   ggplot() +
-  geom_pointrange(aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, colour = disease), cex = 0.7, linewidth = 1) +
-  scale_y_continuous(limits = c(0,1))+
-  labs(x = "Coffee Varieties", y =  "Severity", col = "Diseases")+
+  geom_violin(data = data_severity %>%
+                dplyr::filter(organ=="leaves"), aes(x = Coffee_Variety, y=severity, fill = disease), 
+               position = position_dodge(width=0.6),alpha = 0.3, color = "white",scale = "width") +
+  geom_pointrange(aes(x = Coffee_Variety, y =   Proportion, ymin = CI_low, ymax = CI_high, colour = disease),
+                   position = position_dodge(width=0.6),  cex = 0.7, linewidth = 1) +
+  geom_text(data = compl_letter_CLR_severity_var, aes(x = x-0.2, y =CLR_sev_var_temp$Proportion+0.06, label = .group), vjust = 0)+
+  geom_text(data = compl_letter_CRBD_severity_var, aes(x = x, y =CRBD_sev_var_temp$Proportion+0.06, label = .group), vjust = 0)+
+  geom_text(data = compl_letter_CWD_severity_var, aes(x = x+0.2, y =CWD_sev_var_temp$Proportion+0.06, label = .group), vjust = 0)+
+ 
+  #scale_y_continuous(limits = c(0,0.5))+
+  labs(x = "Coffee Varieties", y =  "Severity", col = "Diseases", fill = "Diseases")+
   scale_color_bmj()+
+  scale_fill_bmj()+
   theme_classic()+
   theme(aspect.ratio = 1,
         axis.text.x = element_text(colour = "black", size=13, face="italic", angle = 18, vjust =1, hjust =1),
@@ -1360,6 +1405,7 @@ CRBD_sev_var_temp %>%
                                     hjust =0.5),
 
         legend.text = element_text(colour = "black", size=13)) -> severity_variety
+
 # (((p_CRBD_severity_variety + theme(axis.title.x = element_blank(), axis.text.x= element_blank()))  / 
 #     (p_CWD_severity_variety + theme(axis.title.x= element_blank(), axis.text.x= element_blank())) /
 #     p_CLR_severity_variety +
@@ -1377,12 +1423,3 @@ p_CWD_trend_variety
 #save.image(file = "outputs/image.Rdata")
 ```
 
--   **Coffee variety:**
-    -   **Has an effect on lesion absence**
-    -   **Has an effect on severity intensity**
-    -   **Has an effect on severity variance (some coffee variety have more severity variance than other)**
--   **Distance alone influence severity, however it has no more significant influence in type 3 anova.**
--   **Interaction between Distance and Coffee variety:**
-    -   **Tendency, but pairwise comparison of slope between coffe variety show no difference**
--   Shade trees doesn't influence significantly CLR severity.
--   Interaction between Shade trees and distance doesn't influence significantly CLR severity.

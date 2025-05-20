@@ -68,7 +68,7 @@ data <- read_xlsx("data/R_PhD_Data_corrected2.xlsx")
 data %>% filter(is.na(Shade_tree_Canopy_Cover))
 data %>%
   rename(sample_code = "Coffee_soil _sample_CODE") %>%
-  # change sample_code names: eg. 
+  # change sample_code names
   mutate(sample_code = paste(sample_code,
                              str_extract(Section_of_Kaweri, "^[a-zA-Z]{4}"), sep = "_"),
          Shade_tree_soil_sample_CODE = paste(Shade_tree_soil_sample_CODE,
@@ -196,14 +196,14 @@ data_yield %>%
 ## Function of residuals check for models
 
 ```{r include=FALSE}
-# Create a function that take input for a glmm creation. Give em back the model and residuals information.
+# Create a function that take input for a glmm creation. Give back the model and residuals informations.
 yield.mod.func2 <- function(data_df, 
                               frml, # Formula for fixed effect of the models
                               fam = gaussian(), # Residuals the models
                               zifrml = "~0", # Formula for zero inflation of the models
                               dispfrml = "~1"){ # Formula for dispersion of the models
   
-  # model creation
+  # Model creation
   mod_yield <-  glmmTMB(formula = formula(frml),
                               family = fam,
                               ziformula = formula(zifrml),
@@ -241,7 +241,7 @@ yield.mod.func2 <- function(data_df,
 ## Select a model based on residuals
 Try different model, the only constrain is that we keep "distance*Shade_tree_species + (1|Shade_tree_soil_sample_CODE)" .
 "distance*Shade_tree_species" : are main effect and interaction in which we are interested 
-"Shade_tree_soil_sample_CODE" : mixte effect to correct autocorrelation at the shade tree level. Because number of infected berries per shrubs might be similar around the same individual shade tree due to proximity of shrubs for example.
+"Shade_tree_soil_sample_CODE" : mixte effect to correct autocorrelation at the shade tree level. Because number of berries per shrubs might be similar around a shade tree due to variable that act locally and that we don't control.
 ```{r echo = T, results = 'hide'}
 hist(data_yield2$berries %>%log1p)
 data_yield2 %>%
@@ -444,25 +444,25 @@ yield_trend_shade %>%
 
 ```{r}
 ### Estimate slope values for severities and  severities*Coffee_Variety
-modelbased::estimate_slopes(mod_yield12, trend = "CLR_severity", by = "Coffee_Variety") %>%
+modelbased::estimate_slopes(mod_yield13, trend = "CLR_severity", by = "Coffee_Variety") %>%
   as.data.frame %>%
   rename(factors = "Coffee_Variety") %>%
   mutate(type = "Coffee variety : CLR severity") -> yield_trend_CLR_var
 
-modelbased::estimate_slopes(mod_yield12, trend = "CRBD_severity", by = "Coffee_Variety") %>%
+modelbased::estimate_slopes(mod_yield13, trend = "CRBD_severity", by = "Coffee_Variety") %>%
   as.data.frame %>%
   rename(factors = "Coffee_Variety") %>%
   mutate(type = "Coffee variety : CRBD severity") -> yield_trend_CRBD_var
 
-modelbased::estimate_slopes(mod_yield12, trend = "CLR_severity") %>%
+modelbased::estimate_slopes(mod_yield13, trend = "CLR_severity") %>%
   as.data.frame %>%
   mutate(type = "disease alone",
          factors ="CLR") -> yield_trend_CLR
-modelbased::estimate_slopes(mod_yield12, trend = "CWD_severity") %>%
+modelbased::estimate_slopes(mod_yield13, trend = "CWD_severity") %>%
   as.data.frame %>%
   mutate(type = "disease alone",
          factors ="CWD") -> yield_trend_CWD
-modelbased::estimate_slopes(mod_yield12, trend = "CRBD_severity") %>%
+modelbased::estimate_slopes(mod_yield13, trend = "CRBD_severity") %>%
   as.data.frame %>%
   mutate(type = "disease alone",
          factors ="CRBD") -> yield_trend_CRBD
@@ -507,6 +507,7 @@ p_yield_trend_disease
 
 
 ```{r}
+# arrange plot with the package patchwork
 p_yield_trend /
 p_yield_trend_disease   &
   theme(plot.tag.position  = c(0.2, 1.02),
@@ -516,7 +517,8 @@ yield_trend_plt
 
 ```
 ```{r}
-get_significance_letters <- function(contrast_df = contrast_section_df, alpha = 0.05, level_col1 = "Level1", level_col2 = "Level2", p_col = "p") {
+# Function to get significance letter from a contrast dataframe (pairwise comparison dataframe)
+get_significance_letters <- function(contrast_df, alpha = 0.05, level_col1 = "Level1", level_col2 = "Level2", p_col = "p") {
   # Extract levels
   all_levels <- unique(c(as.character(contrast_df[[level_col1]]), as.character(contrast_df[[level_col2]])))
 
@@ -553,6 +555,7 @@ library(multcompView)
 
 
 #### Variety
+# Compute estimated mean for each variety
 modelbased::estimate_contrasts(mod_yield13,"Coffee_Variety",estimate = "typical", p_adjust = "fdr") -> contrast_variety_df
 get_significance_letters(contrast_variety_df) %>%
   mutate(variable = factor(variable , levels = levels(data_yield2$Coffee_Variety))) %>%
@@ -587,6 +590,7 @@ data_yield2 %>%
 
 
 ### Section
+# Compute estimated mean for each section
 modelbased::estimate_contrasts(mod_yield13, "Section_of_Kaweri",estimate = "typical", p_adjust = "fdr") -> contrast_section_df
 
 get_significance_letters(contrast_section_df) %>%
