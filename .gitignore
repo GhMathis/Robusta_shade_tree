@@ -2,14 +2,12 @@
 .Rhistory
 *.RData
 .Ruserdata
-*.xlsx
 *.tsv
 *.table*
 *.gz
 *.txt
 *.csv
 *.zip
-data/*
 *.html
 *.docx
 *.tex
@@ -17,3 +15,5 @@ data/*
 *.pdf
 *.svg
 /results/figures/map_uganda_files
+/data/R_PhD_Data_corrected.xlsx
+/data/R_PhD_Data_corrected2.xlsx
