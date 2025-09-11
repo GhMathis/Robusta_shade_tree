@@ -621,7 +621,7 @@ width=20, height=15, units ="cm")
 
 ```{r}
 
-pdf(file ="results/figures/res_fruit_load.pdf",  
+pdf(file ="results/figures/appendix/res_fruit_load.pdf",  
     width = 10,
     height = 6) 
 
@@ -629,7 +629,7 @@ res_yeild <-DHARMa::simulateResiduals(mod_yield13, plot = T)
 plot(res_yeild)
 dev.off()
 
-pdf(file ="results/figures/zif_disp_fruit_load.pdf",  
+pdf(file ="results/figures/appendix/zif_disp_fruit_load.pdf",  
     width = 12,
     height = 4)
 
@@ -637,6 +637,5 @@ par(mfrow = c(1,2))
 testZeroInflation(res_yeild)
 testDispersion(res_yeild)
 dev.off()
-
 ```
 

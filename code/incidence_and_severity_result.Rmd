@@ -1306,31 +1306,31 @@ width=20, height=15, units ="cm")
 # Figures appendix
 
 ```{r}
-pdf(file ="results/figures/res_shrub_incidence.pdf",  
+pdf(file ="results/figures/appendix/res_shrub_incidence.pdf",  
     width = 10,
     height = 6) 
 res_shrub_incidence <-DHARMa::simulateResiduals(mod_binary_shrub_incidence_CWD2, plot = T)
 dev.off()
 
-pdf(file ="results/figures/res_leaf_incidence_BES.pdf",  
+pdf(file ="results/figures/appendix/res_leaf_incidence_BES.pdf",  
     width = 10,
     height = 6) 
 res_leaf_incidence_BES <- DHARMa::simulateResiduals(mod_leaf_incidence_BES_leaves_top6, plot = T)
 dev.off()
 
-pdf(file ="results/figures/res_leaf_incidence_CWD.pdf",  
+pdf(file ="results/figures/appendix/res_leaf_incidence_CWD.pdf",  
     width = 10,
     height = 6) 
 res_leaf_incidence_CWD <- DHARMa::simulateResiduals(mod_leaf_incidence_CWD_top8, plot = T)
 dev.off()
 
-pdf(file ="results/figures/res_leaf_incidence_CLR.pdf",  
+pdf(file ="results/figures/appendix/res_leaf_incidence_CLR.pdf",  
     width = 10,
     height = 6) 
 res_leaf_incidence_CLR <- DHARMa::simulateResiduals(mod_leaf_incidence_CLR_low8, plot = T)
 dev.off()
 
-pdf(file ="results/figures/dispertion_test.pdf",  
+pdf(file ="results/figures/appendix/dispertion_test.pdf",  
     width = 10,
     height = 6) 
 par(mfrow = c(2,2))
@@ -1345,7 +1345,7 @@ title("leaf_incidence CLR")
 
 dev.off()
 
-pdf(file ="results/figures/zero_inflation_test.pdf",  
+pdf(file ="results/figures/appendix/zero_inflation_test.pdf",  
     width = 10,
     height = 6) 
 par(mfrow = c(2,2))
