@@ -5,23 +5,24 @@ date: "2025-09-05"
 ---
 
 ```{r, include=FALSE}
-library(sf)
+
 library(tidyverse)
-library(parzer)
+library(readxl)
+library(sf)
+
 
 library(mapview)
 library(leaflet)
 library(leafem)
 
-library(ggmap)
-library(readxl)
+library(parzer)
 ```
 
 
 ```{r, include=FALSE}
 sf::read_sf("data/drive-download-20241008T142624Z-001 (1)/farmKaw.shp")  -> sf_kaweri
 
-read_xlsx("data/R_PhD_Data_corrected2.xlsx") %>%
+readxl::read_xlsx("data/R_PhD_Data_corrected2.xlsx") %>%
   rename(sample_code = "Coffee_soil _sample_CODE") %>% 
   # change sample names format
   mutate(sample_code = paste(sample_code,
@@ -39,18 +40,14 @@ read_xlsx("data/R_PhD_Data_corrected2.xlsx") %>%
 coordinate_df <- coordinate_df %>%
   mutate(
     # Crée une nouvelle colonne "lat_decimal" en convertissant la colonne "Latitude"
-    lat_decimal = parse_lat(Latitude),
+    lat_decimal = parzer::parse_lat(Latitude),
     
     # Crée une nouvelle colonne "lon_decimal" en convertissant la colonne "Longitude"
-    lon_decimal = parse_lon(Longitude)
+    lon_decimal = parzer::parse_lon(Longitude)
   )
 ```
 
 ```{r}
-library(viridis)
-library(ggspatial)
-library(ggsci)
-
 names(sf_kaweri) <- make.unique(names(sf_kaweri))
 sf_kaweri <- st_set_crs(sf_kaweri, 4326) 
 
@@ -95,18 +92,12 @@ sf_kaweri %>%
     legend.text = element_text(size = 15)
   ) -> map_kaweri
 
-ggsave(plot = map_kaweri, file="results/figures/map_kaweri.png",
-width=40, height=30,units ="cm")
+
 map_kaweri
 ```
 
 ```{r}
-#install.packages("webshot2")
-library(mapview)
-library(webshot2)
-library(htmlwidgets)
-library(ggspatial)
- ug_border <- read_sf("data/ug_shp/ug.shp")
+ug_border <- read_sf("data/ug_shp/ug.shp")
 
 leaflet() %>%
   addProviderTiles("Esri.WorldGrayCanvas") %>%
@@ -131,13 +122,19 @@ leaflet() %>%
       imperial = FALSE,      # km/m
       updateWhenIdle = TRUE
     )
-  ) %>%
-  addControl(north_arrow, position = "topright")-> map_uganda
+  ) -> map_uganda
 
 map_uganda
 
-
 saveWidget(map_uganda, "results/figures/map_uganda.html", selfcontained = TRUE)
+
+```
+# Figure article
+
+```{r}
+ggsave(plot = map_kaweri, file="results/figures/map_kaweri.pdf",
+width=40, height=30,units ="cm")
+
 webshot("results/figures/map_uganda.html",
         file = "results/figures/map_uganda.pdf", zoom =10,
         vwidth = 900,
