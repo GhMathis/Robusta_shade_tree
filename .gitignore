@@ -1,6 +1,6 @@
 .Rproj.user
 .Rhistory
-.RData
+*.RData
 .Ruserdata
 *.xlsx
 *.tsv
@@ -14,3 +14,6 @@ data/*
 *.docx
 *.tex
 *.png
+*.pdf
+*.svg
+/results/figures/map_uganda_files

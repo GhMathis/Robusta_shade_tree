@@ -1,0 +1,146 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-09-05"
+---
+
+```{r, include=FALSE}
+library(sf)
+library(tidyverse)
+library(parzer)
+
+library(mapview)
+library(leaflet)
+library(leafem)
+
+library(ggmap)
+library(readxl)
+```
+
+
+```{r, include=FALSE}
+sf::read_sf("data/drive-download-20241008T142624Z-001 (1)/farmKaw.shp")  -> sf_kaweri
+
+read_xlsx("data/R_PhD_Data_corrected2.xlsx") %>%
+  rename(sample_code = "Coffee_soil _sample_CODE") %>% 
+  # change sample names format
+  mutate(sample_code = paste(sample_code,
+                             str_extract(Section_of_Kaweri, "^[a-zA-Z]{4}"), sep = "_"),
+         Shade_tree_soil_sample_CODE = paste(Shade_tree_soil_sample_CODE,
+                             str_extract(Section_of_Kaweri, "^[a-zA-Z]{4}"), sep = "_")) %>% 
+  mutate(Shade_tree_species = case_when(Shade_tree_species == "Ficus natalensis"~ "Fn",
+                                        Shade_tree_species == "Albizia coriaria" ~ "Ac",
+                                        Shade_tree_species == "Artocarpus heterophyllus" ~ "Ah",
+                                        Shade_tree_species == "Persea americana" ~ "Pa")) %>%
+  dplyr::select(Shade_tree_species, Section_of_Kaweri, sample_code,
+         Actual_distance_from_shade_tree_m, Shade_tree_soil_sample_CODE, Latitude, Longitude) %>%
+  na.omit()-> coordinate_df
+
+coordinate_df <- coordinate_df %>%
+  mutate(
+    # Crée une nouvelle colonne "lat_decimal" en convertissant la colonne "Latitude"
+    lat_decimal = parse_lat(Latitude),
+    
+    # Crée une nouvelle colonne "lon_decimal" en convertissant la colonne "Longitude"
+    lon_decimal = parse_lon(Longitude)
+  )
+```
+
+```{r}
+library(viridis)
+library(ggspatial)
+library(ggsci)
+
+names(sf_kaweri) <- make.unique(names(sf_kaweri))
+sf_kaweri <- st_set_crs(sf_kaweri, 4326) 
+
+sf_kaweri$ESTATE %>% unique()
+sf_kaweri %>%
+  mutate(ESTATE = case_when(is.na(ESTATE) ~ "Forest",
+                            ESTATE == "KYAMUTUMA" ~ "Kyamutuma",
+                            ESTATE == "NONVE"~ "Nonve",
+                            ESTATE == "KITAGWETA"~ "Kitagweta",
+                            ESTATE == "KITEMBA" ~ "Kitemba",
+                            ESTATE == "LUWUNGA" ~ "Luwunga" )) %>%
+  ggplot() +
+  geom_sf(aes(fill = ESTATE),alpha =0.5)+
+  geom_point(data = coordinate_df%>%
+              filter(Shade_tree_soil_sample_CODE != "FIC3_Kite"), aes(lon_decimal,lat_decimal,shape = Shade_tree_species),cex = 4,alpha =1) +
+  scale_color_simpsons()+
+  scale_fill_viridis(discrete=T, option="viridis",direction = -1) +
+  labs(fill = "Section", shape = "Shade tree species") +
+
+  annotation_north_arrow(
+    location = "tr", 
+    which_north = "true", 
+
+    style = north_arrow_minimal
+  ) +
+  annotation_scale(
+    location = "bl", 
+    width_hint = 0.4, 
+
+    text_cex = 0.8
+  )  +
+
+  theme_minimal() +
+  theme(
+
+    panel.grid = element_blank(),
+    axis.ticks= element_blank(), # Remove y-axis ticks
+    axis.title= element_blank(), # Remove y-axis title
+    axis.text =element_blank(),
+    legend.position = "right",
+    legend.title = element_text(size = 20, face = "bold"),
+    legend.text = element_text(size = 15)
+  ) -> map_kaweri
+
+ggsave(plot = map_kaweri, file="results/figures/map_kaweri.png",
+width=40, height=30,units ="cm")
+map_kaweri
+```
+
+```{r}
+#install.packages("webshot2")
+library(mapview)
+library(webshot2)
+library(htmlwidgets)
+library(ggspatial)
+ ug_border <- read_sf("data/ug_shp/ug.shp")
+
+leaflet() %>%
+  addProviderTiles("Esri.WorldGrayCanvas") %>%
+ # addProviderTiles("CartoDB.Positron") %>%   # clean basemap
+  # polygons
+  addPolygons(
+    data = sf_kaweri,
+    color = "black", weight = 1,
+    fillOpacity = 1
+
+  ) %>%
+  addPolygons(
+    data = ug_border,
+    color = "black",
+    weight = 3,
+    fill  = F,
+      
+    ) %>%
+  addScaleBar(
+    position = "bottomleft",
+    options = scaleBarOptions(
+      imperial = FALSE,      # km/m
+      updateWhenIdle = TRUE
+    )
+  ) %>%
+  addControl(north_arrow, position = "topright")-> map_uganda
+
+map_uganda
+
+
+saveWidget(map_uganda, "results/figures/map_uganda.html", selfcontained = TRUE)
+webshot("results/figures/map_uganda.html",
+        file = "results/figures/map_uganda.pdf", zoom =10,
+        vwidth = 900,
+        vheight = 1000)
+```
+

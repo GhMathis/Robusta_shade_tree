@@ -32,6 +32,7 @@ library(ggeffects)
 library(DHARMa)
 library(interactions)
 library(ggsci)
+library(viridis)
 
 library(sf)
 
@@ -74,10 +75,10 @@ data %>%
 # Isolate covariate from the main dataframe
 covariate_data <- data %>%
   dplyr::select(Shade_tree_species, Section_of_Kaweri, sample_code, Coffee_Variety,
-         Actual_distance_from_shade_tree_m, Shade_tree_soil_sample_CODE) %>% 
-  mutate(Coffee_Variety = case_when(is.na(Coffee_Variety) ~"unknown_var",
+         Actual_distance_from_shade_tree_m, Shade_tree_soil_sample_CODE) %>%
+  mutate(Coffee_Variety = case_when(Coffee_Variety== "Unidentified" ~"Op2",
+                                    Coffee_Variety== "Open pollinated" ~"Op1",
                                     .default = Coffee_Variety))
-
  data %>% 
    # Select incidence columns 
   dplyr::select(sample_code, starts_with("inc"), starts_with("Inc")) %>%
@@ -473,7 +474,7 @@ ggeffects::predict_response(mod_binary_incidence_CWD2, c("distance[all]", "Coffe
         axis.text = element_blank(),
         panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)) -> p3
 
-ggeffect::predict_response(mod_binary_incidence_CWD2, c("distance[all]"), margin = "empirical") %>%
+ggeffects::predict_response(mod_binary_incidence_CWD2, c("distance[all]"), margin = "empirical") %>%
   plot(show_data =T,show_ci=T, show_title = F,
         dot_size  = 3, 
         dot_alpha = 0.4,
@@ -514,13 +515,35 @@ incidence_variety %>%
         axis.line = element_line(colour = "black"),
         panel.border = element_blank(),
         axis.ticks =  element_line(colour = "black"),
-        axis.text.x = element_text(colour = "black", size=13, face="italic", angle = -10, vjust = 0, hjust =0.5),
+        axis.text.x = element_text(colour = "black", size=13, face="italic", angle = 25, vjust = 1, hjust =1),
         axis.text.y = element_text(colour = "black", size=13, face="italic"),
         legend.text = element_text(colour = "black", size=18),
         axis.title= element_text(size=16,face="bold"),
         strip.text = element_text(colour = "black", size=15, face ="italic")) -> p5
 
 p5
+
+modelbased::estimate_means(mod_binary_incidence_CWD2, by = c("distance", "Shade_tree_species"), estimate ="typical", backend = "marginaleffects") %>% 
+  as.data.frame() %>%
+  ggplot()+
+  geom_ribbon(aes(distance,Probability, ymin= CI_low, ymax = CI_high, fill = Shade_tree_species), alpha = 0.3, linewidth = 1) +
+  geom_line(aes(x=distance,Probability, col = Shade_tree_species), linewidth = 1) +
+  geom_point(data = binary_data_CWD, aes(distance,true_incidence, fill = Shade_tree_species),
+             alpha = 0.8, shape = 21, cex = 3, color="black",show.legend = F)+
+  facet_grid(row = vars(Shade_tree_species), switch="both")+
+  scale_y_continuous(limits = c(0,1))+
+  labs(x = "Distance from\n shade tree (m)", y = "CWD incidence probability") +
+  scale_fill_viridis(option = "viridis",discrete = T )+
+  scale_color_viridis(option = "viridis",discrete = T )+
+  theme_classic()+
+  theme(aspect.ratio = 1,
+        plot.margin = margin(0, 0, 0, 0),
+        axis.title.x = element_blank(),
+        legend.position = "None",
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title.y = element_text(colour = "black", size=14, face="italic")) -> p6
+p6
+
 
 layout <- c(
   area(t = 0, l = 0, b = 2, r = 3.5),
@@ -538,14 +561,14 @@ layout2 <- c(
   area(t = 0, l = 0, b =10, r = 3.5),
   area(t = 0, l = 2, b = 10, r = 10)
 )
-p2+theme(axis.title.x =  element_text(size=16,face="bold"),
+p6+theme(axis.title.x =  element_text(size=16,face="bold"),
          axis.title.y =  element_text(size=16,face="bold"))+
   p5+theme(axis.title.y = element_blank())+
   plot_layout(design = layout2) &
   theme(plot.tag.position  = c(0.25, 1),
         plot.tag = element_text(size=16,face="italic"))&
-  plot_annotation(tag_levels = 'A')
-  
+  plot_annotation(tag_levels = 'A') -> plot_cwd_incidence
+plot_cwd_incidence
 ```
 
 
@@ -595,7 +618,8 @@ data_incidence %>%
   main_theme
 
 data_incidence %>%
- 
+ mutate(disease = case_when(disease == "CRBD" ~ "BES",
+                             .default = disease)) %>%
   mutate(Shade_tree_species) %>%
   group_by(Shade_tree_species, disease) %>%
   mutate(n_tot = n(),
@@ -607,8 +631,8 @@ data_incidence %>%
   geom_bar(aes(Shade_tree_species, fill = as.factor(true_incidence)), position = "fill") +
   geom_text(aes(x=Shade_tree_species, y=0.2,group = Shade_tree_species, label = infected_count), col = "white") +
   geom_text(aes(x=Shade_tree_species, y=1.04,group = Shade_tree_species, label = n_tot)) +
-  scale_fill_startrek() +
-  labs(x = " Shade tree species", y = "Proportion of coffee shrubs", fill = "Lesion incidence") +
+  scale_fill_viridis(discrete = T) +
+  labs(x = " Shade tree species", y = "Proportion of coffee shrubs", fill = "Symptoms\n incidence") +
   theme_minimal()+
   theme(aspect.ratio = 1,
       axis.line = element_line(colour = "black"),
@@ -616,23 +640,37 @@ data_incidence %>%
       axis.ticks =  element_line(colour = "black"),
       axis.text.x = element_text(colour = "black", size=13, face="italic"),
       axis.text.y = element_text(colour = "black", size=13, face="italic"),
-      legend.title = element_text(colour = "black", size=20, hjust =0.5),
+      legend.title = element_text(colour = "black", size=15, hjust =0.5),
       legend.text = element_text(colour = "black", size=13),
       axis.title= element_text(size=16,face="bold"),
-      strip.text = element_text(colour = "black", size=15, face ="italic"))
+      strip.text = element_text(colour = "black", size=15, face ="italic")) -> disease_incidence
 
-data_incidence %>%
-  group_by(Coffee_Variety, disease) %>%
-  mutate(n_tot = n(),
-            infected_count = sum( true_incidence,na.rm  =T)) %>%
-  ggplot()+
-  facet_wrap(~disease) +
-  geom_bar(aes(Coffee_Variety, fill = as.factor(true_incidence)), position = "fill") +
-  geom_text(aes(x=Coffee_Variety, y=0.2,group = Coffee_Variety, label = infected_count), col = "white") +
-  geom_text(aes(x=Coffee_Variety, y=1.04,group = Coffee_Variety, label = n_tot)) +
-  scale_fill_startrek() +
-  labs(x = " Coffee Variety", y = "Proportion", fill = "Incidence") +
-  main_theme
+# 
+# data_incidence %>%
+#   mutate(disease = case_when(disease == "CRBD" ~ "BES",
+#                              .default = disease)) %>%
+#   group_by(Coffee_Variety, disease) %>%
+#   mutate(n_tot = n(),
+#             infected_count = sum( true_incidence,na.rm  =T)) %>%
+#   ggplot()+
+#   facet_wrap(~disease) +
+#   geom_bar(aes(Coffee_Variety, fill = as.factor(true_incidence)), position = "fill") +
+#   geom_text(aes(x=Coffee_Variety, y=0.2,group = Coffee_Variety, label = infected_count), col = "white") +
+#   geom_text(aes(x=Coffee_Variety, y=1.04,group = Coffee_Variety, label = n_tot)) +
+#   scale_fill_viridis(discrete = T) +
+#   labs(x = " Coffee Variety", y = "Proportion", fill = "Incidence") +
+#   theme_minimal()+
+#   theme(aspect.ratio = 1,
+#       axis.line = element_line(colour = "black"),
+#       panel.border = element_blank(),
+#       axis.ticks =  element_line(colour = "black"),
+#       axis.text.x = element_text(colour = "black", size=13, face="italic"),
+#       axis.text.y = element_text(colour = "black", size=13, face="italic"),
+#       legend.title = element_text(colour = "black", size=18, hjust =0.5,face="italic"),
+#       legend.text = element_text(colour = "black", size=13),
+#       axis.title= element_text(size=16,face="bold"),
+#       strip.text = element_text(colour = "black", size=15, face ="italic")) 
+disease_incidence
 
 ```
 
@@ -643,28 +681,35 @@ data_incidence %>%
 ```{r echo=FALSE}
 data_severity %>%
   filter(organ != "berries") %>%
-   dplyr::select(severity, sample_code, disease,branch,portion) %>%
+  mutate(disease = case_when(disease == "CRBD" ~ "BES",
+                           .default = disease)) %>%
+  mutate(portion = case_when(portion == "lower" ~"Lower",
+                             portion == "middle"~"Middle",
+                             portion == "Top"~"Upper"),
+         portion = factor(portion, levels = c("Upper","Middle","Lower"))) %>%
+  dplyr::select(severity, sample_code, disease,branch,portion) %>%
   pivot_wider(names_from = disease, values_from = severity) %>% 
-  dplyr::select(CWD, CLR, CRBD, portion) %>%
+  dplyr::select(CWD, CLR, BES, portion) %>%
   ggpairs(columns = 1:3,
           mapping = ggplot2::aes(color = portion,
                                 
                                  alpha =1),
-          diag = list(continuous = wrap("barDiag", alpha=0.5 )),
-          upper = list(continuous = wrap("cor", size = 5))) +
+          diag = list(continuous = wrap("barDiag", alpha=1 )),
+          upper = list(continuous = wrap("cor", size = 5, alpha =1))) +
   labs(x = "Severity", y = "Severity/branch count")+
-  scale_color_lancet()+
-  scale_fill_lancet()+
+  # scale_color_lancet()+
+  # scale_fill_lancet()+
+  viridis::scale_fill_viridis( discrete = T) +
+  viridis::scale_color_viridis( discrete = T) +
   theme_classic() +
   theme (axis.line = element_line(colour = "black"),
         axis.ticks =  element_line(colour = "black"),
         legend.text = element_text(colour = "black", size=18),
         axis.title= element_text(size=16,face="bold"),
         strip.text = element_text(colour = "black", size=15, face ="italic"),
-        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1))
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)) -> disease_correlation_plot
+disease_correlation_plot
 ```
-
-
 
 
 
@@ -873,7 +918,7 @@ Anova(mod_severity_CRBD_leaves_top6, 3) %>%
 Anova(mod_severity_CRBD_leaves_top6, component = "zi") 
 
 Anova(mod_severity_CRBD_leaves_top6, component = "disp")
-r.squaredGLMM(mod_severity_CRBD_leaves_top6)
+
 r2_nakagawa(mod_severity_CRBD_leaves_top6,
             null_model =   glmmTMB(formula = severity~1,
                               ziformula = ~0,
@@ -955,7 +1000,7 @@ CWD_top%>%
 CWD_top%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance  + 
                                             (1|Shade_tree_soil_sample_CODE)"),
-                              zifrml = formula("~log_total_count")) -> mod_severity_CWD_top6
+                              zifrml = formula("~Coffee_Variety")) -> mod_severity_CWD_top6
 CWD_top%>%
   severity.mod.func(frml = formula("severity ~ Shade_tree_species*distance + Coffee_Variety+
                                             (1|Shade_tree_soil_sample_CODE)"),
@@ -1163,7 +1208,7 @@ CLR_low %>%
 ### Model selection
 
 ```{r}
-AIC(mod_severity_CLR_low8,mod_severity_CLR_low10)
+AIC(mod_severity_CLR_low8,mod_severity_CLR_low10mod_severity_CLR_low11)
 # Anova
 Anova(mod_severity_CLR_low8) %>%
   round(2) 
@@ -1177,6 +1222,7 @@ Anova(mod_severity_CLR_low8,component = "disp") %>%
 ### Model's estimation
 
 ```{r}
+
 predict_response(mod_severity_CLR_low8, c("distance[all]", "Shade_tree_species","Coffee_Variety"),
                  margin = "empirical",type = "zero_inflated") -> prediction_clr_all
 
@@ -1351,19 +1397,21 @@ clr_trend_shade %>%
   geom_pointrange(aes(y = factors, x = Slope, xmin = CI_low, xmax = CI_high, colour = type),cex = 0.7, linewidth = 1) +
   geom_vline(xintercept = 0, linewidth = 1, linetype = 3, color = "red") +
   #facet_grid(rows = vars(type), scales = "free_y")+
-  labs(x= "Estimated distance slopes for CLR severity", col = "Slope type")+
-  scale_color_d3()+
+  labs(x= "Estimated slopes for CLR severity", y = "Slopes types", col = "Predictors")+
+  scale_color_brewer(palette = "Set1")+
   theme_classic()+
   theme(aspect.ratio = 1,
-        axis.title.y = element_blank(),
+       
         axis.text.x = element_text(colour = "black", size=13, face="italic", angle = 18, vjust =1, hjust =1),
         axis.text.y = element_text(colour = "black", size=13, face="italic"),
-        axis.title = element_text(colour = "black", size=16),
+        axis.title = element_text(colour = "black", size=16, face="bold"),
         panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
         legend.title = element_text(colour = "black", size=16,
                                     hjust =0.5),
         legend.text = element_text(colour = "black", size=13)) -> p_crl_trend
 p_crl_trend
+
+
 ```
 
 
@@ -1381,11 +1429,17 @@ str(data_severity)
 CRBD_sev_var_temp %>%
   bind_rows(CWD_sev_var_temp) %>%
   bind_rows(CLR_sev_var_temp) %>%
+   mutate(disease = case_when(disease == "CRBD" ~ "BES",
+                             .default = disease),
+          disease = factor(disease, levels = c("CLR","BES", "CWD"))) %>%
   ggplot() +
   geom_violin(data = data_severity %>%
-                dplyr::filter(organ=="leaves"), aes(x = Coffee_Variety, y=severity, fill = disease), 
-               position = position_dodge(width=0.6),alpha = 0.3, color = "white",scale = "width") +
-  geom_pointrange(aes(x = Coffee_Variety, y =   Proportion, ymin = CI_low, ymax = CI_high, colour = disease),
+                dplyr::filter(organ=="leaves")%>%
+   mutate(disease = case_when(disease == "CRBD" ~ "BES",
+                             .default = disease),
+          disease = factor(disease, levels = c("CLR","BES", "CWD"))), aes(x = Coffee_Variety, y=severity, fill = disease, col = disease), 
+               position = position_dodge(width=0.6),scale = "width", alpha = 0.5) +
+  geom_pointrange(aes(x = Coffee_Variety, y =   Proportion, ymin = CI_low, ymax = CI_high, group = disease),
                    position = position_dodge(width=0.6),  cex = 0.7, linewidth = 1) +
   geom_text(data = compl_letter_CLR_severity_var, aes(x = x-0.2, y =CLR_sev_var_temp$Proportion+0.06, label = .group), vjust = 0)+
   geom_text(data = compl_letter_CRBD_severity_var, aes(x = x, y =CRBD_sev_var_temp$Proportion+0.06, label = .group), vjust = 0)+
@@ -1393,13 +1447,13 @@ CRBD_sev_var_temp %>%
  
   #scale_y_continuous(limits = c(0,0.5))+
   labs(x = "Coffee Varieties", y =  "Severity", col = "Diseases", fill = "Diseases")+
-  scale_color_bmj()+
-  scale_fill_bmj()+
+  scale_fill_viridis(discrete = T) +
+  scale_color_viridis(discrete = T) +
   theme_classic()+
   theme(aspect.ratio = 1,
         axis.text.x = element_text(colour = "black", size=13, face="italic", angle = 18, vjust =1, hjust =1),
         axis.text.y = element_text(colour = "black", size=13, face="italic"),
-        axis.title = element_text(colour = "black", size=16),
+        axis.title = element_text(colour = "black", size=16, face="bold"),
         panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
         legend.title = element_text(colour = "black", size=16,
                                     hjust =0.5),
@@ -1421,5 +1475,84 @@ p_CRBD_severity_variety + theme(axis.title.x = element_blank(), axis.text.x= ele
 p_CWD_trend_variety
 
 #save.image(file = "outputs/image.Rdata")
+```
+
+```{r}
+
+plot_cwd_incidence 
+disease_incidence
+disease_correlation_plot
+p_crl_trend
+severity_variety
+
+ggsave(plot = plot_cwd_incidence, file="results/figures/plot_cwd_incidence.pdf",
+width=25, height=15,units ="cm")
+ggsave(plot = disease_incidence, file="results/figures/disease_incidence_shade_tree.pdf",
+width=20, height=15, units ="cm")
+ggsave(plot = disease_correlation_plot, file="results/figures/disease_correlation_plot.pdf",
+width=20, height=15, units ="cm")
+ggsave(plot = p_crl_trend, file="results/figures/p_crl_trend.pdf",
+width=20, height=15, units ="cm")
+ggsave(plot = severity_variety, file="results/figures/severity_variety.pdf",
+width=20, height=15, units ="cm")
+```
+# Figures appendix
+```{r}
+pdf(file ="results/figures/res_incidence.pdf",  
+    width = 10,
+    height = 6) 
+res_incidence <-DHARMa::simulateResiduals(mod_binary_incidence_CWD2, plot = T)
+dev.off()
+
+pdf(file ="results/figures/res_severity_CRBD.pdf",  
+    width = 10,
+    height = 6) 
+res_severity_CRBD <- DHARMa::simulateResiduals(mod_severity_CRBD_leaves_top6, plot = T)
+dev.off()
+
+pdf(file ="results/figures/res_severity_CWD.pdf",  
+    width = 10,
+    height = 6) 
+res_severity_CWD <- DHARMa::simulateResiduals(mod_severity_CWD_top8, plot = T)
+dev.off()
+
+pdf(file ="results/figures/res_severity_CLR.pdf",  
+    width = 10,
+    height = 6) 
+res_severity_CLR <- DHARMa::simulateResiduals(mod_severity_CLR_low8, plot = T)
+dev.off()
+
+pdf(file ="results/figures/dispertion_test.pdf",  
+    width = 10,
+    height = 6) 
+par(mfrow = c(2,2))
+testDispersion(res_incidence)
+title("Incidence CWD")
+testDispersion(res_severity_CRBD)
+title("Severity BES")
+testDispersion(res_severity_CWD)
+title("Severity CWD")
+testDispersion(res_severity_CLR)
+title("Severity CLR")
+
+dev.off()
+
+pdf(file ="results/figures/zero_inflation_test.pdf",  
+    width = 10,
+    height = 6) 
+par(mfrow = c(2,2))
+testZeroInflation(res_incidence)
+title("Incidence CWD")
+testZeroInflation(res_severity_CRBD)
+title("Severity BES")
+testZeroInflation(res_severity_CWD)
+title("Severity CWD")
+testZeroInflation(res_severity_CLR)
+title("Severity CLR")
+
+dev.off()
+
+par(mfrow = c(1,1))
+
 ```
 

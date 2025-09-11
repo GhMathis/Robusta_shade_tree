@@ -76,15 +76,14 @@ data %>%
    mutate(Shade_tree_species = case_when(Shade_tree_species == "Ficus natalensis"~ "Fn",
                                         Shade_tree_species == "Albizia coriaria" ~ "Ac",
                                         Shade_tree_species == "Artocarpus heterophyllus" ~ "Ah",
-                                        Shade_tree_species == "Persea americana" ~ "Pa"))-> data
-
-
-
+                                        Shade_tree_species == "Persea americana" ~ "Pa")) -> data
 data %>%
-  select(Shade_tree_species, Section_of_Kaweri, sample_code, Coffee_Variety,
-         Actual_distance_from_shade_tree_m, Shade_tree_Canopy_Cover, Shade_tree_soil_sample_CODE,
-         Longitude, Latitude) %>% 
-  mutate(Coffee_Variety = case_when(is.na(Coffee_Variety) ~"unknown_var",
+  select(Shade_tree_species, Section_of_Kaweri, sample_code, 
+       Coffee_Variety, Actual_distance_from_shade_tree_m, 
+       Shade_tree_Canopy_Cover, Shade_tree_soil_sample_CODE,
+       Longitude, Latitude) %>%
+  mutate(Coffee_Variety = case_when(Coffee_Variety== "Unidentified" ~"Op2",
+                                    Coffee_Variety== "Open pollinated" ~"Op1",
                                     .default = Coffee_Variety)) %>%
  
   group_by(Shade_tree_soil_sample_CODE) %>%
@@ -332,14 +331,6 @@ data_yield2 %>%
                     dispfrml = "~ 1",
                     fam = poisson)  -> mod_yield13
 
-data_yield2 %>%
-  yield.mod.func2(frml = "berries ~ distance*Shade_tree_species + distance*Coffee_Variety + Section_of_Kaweri + 
-                    (CLR_severity + CRBD_severity )*Coffee_Variety +CWD_severity+log_total_count +
-                    (1|Shade_tree_soil_sample_CODE)",
-                    zifrml = "~0",
-                    dispfrml = "~ 1",
-                    fam = poisson)  -> mod_yield14
-
 ```
 
 
@@ -348,7 +339,7 @@ data_yield2 %>%
 Select best model (across model with good residuals) based on AIC
 ```{r}
 
-AIC(mod_yield,mod_yield2, mod_yield3, mod_yield4,mod_yield5,mod_yield6,mod_yield7,mod_yield7_bis,mod_yield8,mod_yield9,mod_yield10,mod_yield13,mod_yield14)
+AIC(mod_yield,mod_yield2, mod_yield3, mod_yield4,mod_yield5,mod_yield6,mod_yield7,mod_yield7_bis,mod_yield8,mod_yield9,mod_yield10,mod_yield13)
 
 
 Anova(mod_yield13) %>% round(2)
@@ -420,18 +411,17 @@ yield_trend_shade %>%
                                         "Coffee variety : Distance",
                                         "Shade tree : Distance"))) %>%
   ggplot() +
-    geom_hline(aes(yintercept = factors), cex =0.2, linetype = 1, color = "gray", alpha =0.5) +
+    geom_hline(aes(yintercept = factors), cex =0.2, linetype = 1, color = "gray", alpha =0.2) +
     geom_pointrange(aes(y = factors, x = Slope, xmin = CI_low, xmax = CI_high, colour = type),cex = 0.7, linewidth = 1) +
     geom_vline(xintercept = 0, cex = 1, linetype = 3, color = "red") +
     #facet_grid(rows = vars(type), scales = "free_y")+
-    labs(x= "Estimated slope", col = "Slope type")+
-    scale_color_d3()+
+ labs(x= "Estimated slopes for fruit load", y = "Slopes types", col = "Predictors")+
+    scale_color_brewer(palette = "Set1") +
     theme_classic()+
     theme(aspect.ratio = 1,
-          axis.title.y = element_blank(),
           axis.text.x = element_text(colour = "black", size=13, face="italic", angle = 18, vjust =1, hjust =1),
           axis.text.y = element_text(colour = "black", size=13, face="italic"),
-          axis.title = element_text(colour = "black", size=16),
+          axis.title = element_text(colour = "black", size=16, face ="bold"),
           panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
           legend.title = element_text(colour = "black", size=16,
                                       hjust =0.5),
@@ -483,26 +473,24 @@ yield_trend_CLR_var %>%
                                       "Coffee variety : CRBD severity"))) %>%
   filter(Slope<10000) %>%
   ggplot() +
-    geom_hline(aes(yintercept = factors), cex =0.2, linetype = 1, color = "gray", alpha =0.5) +
+    geom_hline(aes(yintercept = factors), cex =0.2, linetype = 1, color = "gray", alpha =0.3) +
     geom_pointrange(aes(y = factors, x = Slope, xmin = CI_low, xmax = CI_high, colour = type),
                   cex = 0.7, linewidth = 1, position = position_dodge(width = 0.2)) +
     geom_vline(xintercept = 0, cex = 1, linetype = 3, color = "red") +
 
   #facet_grid(rows = vars(type), scales = "free_y")+
-    labs(x= "Estimated slope",y= "Disease alone", col = "Slope type")+
-    scale_color_igv()+
+    labs(x= "Estimated slopes for fruit load", y = "Slopes types", col = "Predictors")+
+    scale_color_brewer(palette = "Set1") +
     theme_classic()+
     theme(aspect.ratio = 1,
-          axis.title.y = element_blank(),
           axis.text.x = element_text(colour = "black", size=13, face="italic", angle = 18, vjust =1, hjust =1),
           axis.text.y = element_text(colour = "black", size=13, face="italic"),
-          axis.title = element_text(colour = "black", size=16),
+          axis.title = element_text(colour = "black", size=16, face ="bold"),
           panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
           legend.title = element_text(colour = "black", size=16,
                                       hjust =0.5),
   
           legend.text = element_text(colour = "black", size=13)) -> p_yield_trend_disease
-p_yield_trend_disease
 ```
 
 
@@ -567,26 +555,28 @@ modelbased::estimate_means(mod_yield13,"Coffee_Variety",estimate = "typical") ->
 data_yield2 %>%
   ggplot( aes(x = Coffee_Variety, y = berries)) +
   # Add base data
-  geom_violin(aes(fill = Coffee_Variety), color = "white") +
+  geom_violin( aes(fill = Coffee_Variety), color = "white", alpha =0.5) +
+  scale_fill_viridis(discrete = T)+
   #geom_jitter(width = 0.1, height = 0, alpha = 0.5, size = 3) +
   # Add pointrange and line for means
-  geom_text(data = compl_letter_yield_var, aes(x = x, y =1250, label = .group), vjust = 0)+
+  geom_text(data = compl_letter_yield_var, aes(x = x, y =2200, label = .group), vjust = 0)+
   geom_pointrange(
     data = yield_variety,
     aes(y = Mean, ymin = CI_low, ymax = CI_high),
     size = 1,
   ) +
-  # Improve colors
-  scale_fill_brewer(palette = "Pastel1") +
-  scale_color_brewer(palette = "Pastel1") +
-  theme_minimal()+
-   labs(x= "Varieties", y = "Yield")+
+   labs(x= "Varieties", y = "Fruit load")+
   theme_classic()+
   theme(aspect.ratio = 1,
-        legend.position = "None",
+        legend.position = "none",
         axis.text.x = element_text(colour = "black", size=13, face="italic", angle = 18, vjust =1, hjust =1),
         axis.text.y = element_text(colour = "black", size=13, face="italic"),
-        axis.title = element_text(colour = "black", size=16)) -> p_yield_variety
+        axis.title = element_text(colour = "black", size=16, face ="bold"),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        legend.title = element_text(colour = "black", size=16,
+                                    hjust =0.5),
+
+        legend.text = element_text(colour = "black", size=13)) -> p_yield_variety
 
 
 ### Section
@@ -603,7 +593,7 @@ modelbased::estimate_means(mod_yield13,"Section_of_Kaweri",estimate = "typical")
 data_yield2 %>%
   ggplot( aes(x = Section_of_Kaweri, y = berries)) +
   # Add base data
-  geom_violin(aes(fill = Section_of_Kaweri), color = "white") +
+  geom_violin(fill= "gray",color = "white") +
   #geom_jitter(width = 0.1, height = 0, alpha = 0.5, size = 3) +
   # Add pointrange and line for means
   geom_text(data = compl_letter_yield_section, aes(x = x, y =1450, label = .group), vjust = 0)+
@@ -612,9 +602,6 @@ data_yield2 %>%
     aes(y = Mean, ymin = CI_low, ymax = CI_high),
     size = 1,
   ) +
-  # Improve colors
-  scale_fill_brewer(palette = "Pastel2") +
-  scale_color_brewer(palette = "Pastel2") +
   theme_minimal()+
    labs(x= "Sections", y = "Yield")+
   theme_classic()+
@@ -634,4 +621,38 @@ p_yield_variety +
   plot_annotation(tag_levels = 'A')
 ```
 
+```{r}
+p_yield_trend_disease
+p_yield_trend
+p_yield_variety
+ggsave(plot = p_yield_trend_disease, file="results/figures/yield_effect_plot_diseases.pdf",
+width=20, height=15,units ="cm")
+ggsave(plot = p_yield_trend, file="results/figures/yield_effect_plot_distance.pdf",
+width=20, height=15, units ="cm")
+ggsave(plot = p_yield_variety, file="results/figures/yield_variety.pdf",
+width=20, height=15, units ="cm")
+
+
+```
+# Figures appendix
+```{r}
+
+pdf(file ="results/figures/res_fruit_load.pdf",  
+    width = 10,
+    height = 6) 
+
+res_yeild <-DHARMa::simulateResiduals(mod_yield13, plot = T)
+plot(res_yeild)
+dev.off()
+
+pdf(file ="results/figures/zif_disp_fruit_load.pdf",  
+    width = 12,
+    height = 4)
+
+par(mfrow = c(1,2))
+testZeroInflation(res_yeild)
+testDispersion(res_yeild)
+dev.off()
+
+```
 
