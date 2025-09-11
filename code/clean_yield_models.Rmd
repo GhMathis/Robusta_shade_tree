@@ -3,23 +3,25 @@ title: "clean_yield_models"
 output: html_document
 date: "2025-01-24"
 editor_options: 
-  chunk_output_type: console
+  chunk_output_type: inline
 ---
 # Setup data and packages(no shown)
 ## 1 Load Packages
-```{r setup, include=FALSE}
+```{r  include=FALSE}
 library(tidyverse)
 library(readxl)
+library(GGally)
+library(viridis)
 library(ggsci)
+library(patchwork)
+
+library(glmmTMB)
+library(DHARMa)
+library(car)
+library(modelbased)
 library(performance)
 
-library(patchwork)
-library(car)
-library(glmmTMB)
-library(effects)
-library(emmeans)
-library(ggeffects)
-library(DHARMa)
+
 
 main_theme = theme_minimal()+
   theme(line = element_blank(), 
@@ -34,7 +36,12 @@ main_theme = theme_minimal()+
         legend.text = element_text(colour = "black", size=18),
         axis.title= element_text(size=28),
         strip.text = element_text(colour = "black", size=15, face ="italic"))
+```
 
+Function to convert GPS point to decimal degrees
+
+
+```{r include=FALSE}
 convert_dms_to_dd <- function(dms) {
   if(is.na(dms)){
     return(NA)
@@ -57,7 +64,6 @@ convert_dms_to_dd <- function(dms) {
   return(decimal_degrees)
   }
 }
-
 ```
 
 ## 2 Arrange data to long format
@@ -102,16 +108,9 @@ data %>%
               ) %>%
   
   ungroup() -> covariate_data
-data %>%
-  filter(sample_code == "ALB4COF3_Kite") %>% pull(No_CRBD_berries_lower_portion_3rd_branch)
+
 ```
 
-Shade tree are correlated to canopy cover
-```{r}
-covariate_data %>%
-  ggplot()+
-  geom_boxplot(aes(Shade_tree_species,Shade_tree_Canopy_Cover ))
-```
 
 ```{r include=FALSE}
 ### Isolate total cont of leaves or berries per branch
@@ -165,7 +164,7 @@ data %>%
             CRBD_infected_berries = sum(CRBD_infected_berries, na.rm =T)) -> number_of_infected_leaves_or_berries
 
 
-## Merge data and compute severity per branchs
+## Merge data and compute leaf_incidence per branchs
 number_of_infected_leaves_or_berries %>%
   left_join(total_number_of_leaves_or_berries, by = join_by("sample_code" == "sample_code")) %>%
   left_join(covariate_data, by = "sample_code") %>%
@@ -174,10 +173,10 @@ number_of_infected_leaves_or_berries %>%
   mutate(berries = as.integer(berries),
          leaves = as.integer(leaves),
          )%>%
-  mutate(CWD_severity = CWD_infected_leaves/leaves,
-            CLR_severity = CLR_infected_leaves/leaves,
-            CRBD_severity = CRBD_infected_leaves/leaves,
-            CRBD_severity_berries = CRBD_infected_berries/(berries+1)) -> data_yield
+  mutate(CWD_leaf_incidence = CWD_infected_leaves/leaves,
+            CLR_leaf_incidence = CLR_infected_leaves/leaves,
+            CRBD_leaf_incidence = CRBD_infected_leaves/leaves,
+            CRBD_leaf_incidence_berries = CRBD_infected_berries/(berries+1)) -> data_yield
 
 ##Remove shrubs with no leaves (dead shrub). Remove all Clone H and D
 data_yield %>%
@@ -188,9 +187,10 @@ data_yield %>%
          Section_of_Kaweri = as.factor(Section_of_Kaweri),
          log_total_count = log(leaves))-> data_yield2
 
+str(data_yield2)
 ```
 
-# Yield (nbr berries per tree) explain with **severity** 
+# Yield (nbr berries per tree) explain with **leaf_incidence** 
 
 ## Function of residuals check for models
 
@@ -206,7 +206,7 @@ yield.mod.func2 <- function(data_df,
   mod_yield <-  glmmTMB(formula = formula(frml),
                               family = fam,
                               ziformula = formula(zifrml),
-                              dispformula = formula(dispfrml),
+                              #dispformula = formula(dispfrml),
                               data = data_df)
   # Compute residuals
   res_yeilds <- DHARMa::simulateResiduals(mod_yield, plot = F)
@@ -228,21 +228,21 @@ yield.mod.func2 <- function(data_df,
   plotResiduals(res_yeilds, form = data_df$log_total_count)
   par(mfrow = c(2, 2))
   
-  # Plot residuals against diseases severities
-  plotResiduals(res_yeilds, form = data_df$CRBD_severity_berries, quantreg = T)
-  plotResiduals(res_yeilds, form = data_df$CLR_severity, quantreg = T)
-  plotResiduals(res_yeilds, form = data_df$CWD_severity, quantreg = T)
-  plotResiduals(res_yeilds, form = data_df$CRBD_severity, quantreg = T)
+  # Plot residuals against diseases leaf incidence
+  plotResiduals(res_yeilds, form = data_df$CLR_leaf_incidence, quantreg = T)
+  plotResiduals(res_yeilds, form = data_df$CWD_leaf_incidence, quantreg = T)
+  plotResiduals(res_yeilds, form = data_df$CRBD_leaf_incidence, quantreg = T)
   return(mod_yield)
 }
 ```
 
 ## Select a model based on residuals
+
 Try different model, the only constrain is that we keep "distance*Shade_tree_species + (1|Shade_tree_soil_sample_CODE)" .
 "distance*Shade_tree_species" : are main effect and interaction in which we are interested 
 "Shade_tree_soil_sample_CODE" : mixte effect to correct autocorrelation at the shade tree level. Because number of berries per shrubs might be similar around a shade tree due to variable that act locally and that we don't control.
+
 ```{r echo = T, results = 'hide'}
-hist(data_yield2$berries %>%log1p)
 data_yield2 %>%
   yield.mod.func2(frml = "berries ~ distance*Shade_tree_species + (1|Shade_tree_soil_sample_CODE)",
                     zifrml = "~0",
@@ -276,48 +276,48 @@ data_yield2 %>%
 
 data_yield2 %>%
   yield.mod.func2(frml = "berries ~ distance*Shade_tree_species + distance*Coffee_Variety + Section_of_Kaweri + 
-                    CLR_severity +
+                    CLR_leaf_incidence +
                      (1|Shade_tree_soil_sample_CODE)",
                     zifrml = "~0",
                     dispfrml = "~ 1",
                     fam = poisson)  -> mod_yield6
 data_yield2 %>%
   yield.mod.func2(frml = "berries ~ distance*Shade_tree_species + distance*Coffee_Variety + Section_of_Kaweri + 
-                    CLR_severity + CRBD_severity + 
+                    CLR_leaf_incidence + CRBD_leaf_incidence + 
                     (1|Shade_tree_soil_sample_CODE)",
                     zifrml = "~0",
                     dispfrml = "~ 1",
                     fam = poisson)  -> mod_yield7
 data_yield2 %>%
   yield.mod.func2(frml = "berries ~ distance*Shade_tree_species + distance*Coffee_Variety + Section_of_Kaweri + 
-                    CLR_severity + CRBD_severity + log_total_count +
+                    CLR_leaf_incidence + CRBD_leaf_incidence + log_total_count +
                     (1|Shade_tree_soil_sample_CODE)",
                     zifrml = "~0",
                     dispfrml = "~ 1",
                     fam = poisson)  -> mod_yield7_bis
 data_yield2 %>%
   yield.mod.func2(frml = " berries ~ distance * Shade_tree_species + distance * Coffee_Variety +  
-    Section_of_Kaweri + CLR_severity + CRBD_severity + CWD_severity + (1 | Shade_tree_soil_sample_CODE)",
+    Section_of_Kaweri + CLR_leaf_incidence + CRBD_leaf_incidence + CWD_leaf_incidence + (1 | Shade_tree_soil_sample_CODE)",
                     zifrml = "~0",
                     dispfrml = "~ 1",
                     fam = poisson)  -> mod_yield8
 data_yield2 %>%
   yield.mod.func2(frml = "berries ~ distance*Shade_tree_species + distance*Coffee_Variety + Section_of_Kaweri + 
-                    (CLR_severity + CRBD_severity + CWD_severity)^2 +
+                    (CLR_leaf_incidence + CRBD_leaf_incidence + CWD_leaf_incidence)^2 +
                     (1|Shade_tree_soil_sample_CODE)",
                     zifrml = "~0",
                     dispfrml = "~ 1",
                     fam = poisson)  -> mod_yield9
 data_yield2 %>%
   yield.mod.func2(frml = "berries ~ distance*Shade_tree_species + distance*Coffee_Variety + Section_of_Kaweri + 
-                    CLR_severity * CRBD_severity * CWD_severity +
+                    CLR_leaf_incidence * CRBD_leaf_incidence * CWD_leaf_incidence +
                     (1|Shade_tree_soil_sample_CODE)",
                     zifrml = "~0",
                     dispfrml = "~ 1",
                     fam = poisson)  -> mod_yield10
 data_yield2 %>%
   yield.mod.func2(frml = "berries ~ distance*Shade_tree_species + distance*Coffee_Variety + Section_of_Kaweri + 
-                    (CLR_severity + CRBD_severity +CWD_severity )*Coffee_Variety+
+                    (CLR_leaf_incidence + CRBD_leaf_incidence +CWD_leaf_incidence )*Coffee_Variety+
                     (1|Shade_tree_soil_sample_CODE)",
                     zifrml = "~0",
                     dispfrml = "~ 1",
@@ -325,7 +325,7 @@ data_yield2 %>%
 
 data_yield2 %>%
   yield.mod.func2(frml = "berries ~ distance*Shade_tree_species + distance*Coffee_Variety + Section_of_Kaweri + 
-                    (CLR_severity + CRBD_severity )*Coffee_Variety +CWD_severity+
+                    (CLR_leaf_incidence + CRBD_leaf_incidence )*Coffee_Variety +CWD_leaf_incidence+
                     (1|Shade_tree_soil_sample_CODE)",
                     zifrml = "~0",
                     dispfrml = "~ 1",
@@ -337,47 +337,29 @@ data_yield2 %>%
 ## Model selection
 
 Select best model (across model with good residuals) based on AIC
+
 ```{r}
+AIC(mod_yield,
+    mod_yield2,
+    mod_yield3,
+    mod_yield4,
+    mod_yield5,
+    mod_yield6,
+    mod_yield7,
+    mod_yield7_bis,
+    mod_yield8,
+    mod_yield9,
+    mod_yield10
+    ,mod_yield13) %>%
+  arrange(AIC)
+```
 
-AIC(mod_yield,mod_yield2, mod_yield3, mod_yield4,mod_yield5,mod_yield6,mod_yield7,mod_yield7_bis,mod_yield8,mod_yield9,mod_yield10,mod_yield13)
 
-
+```{r}
 Anova(mod_yield13) %>% round(2)
-r2_nakagawa(mod_yield13)
-summary(mod_yield13)
 ```
 
 ## Model prediction
-
-### Simple effect
-
-```{r}
-predict_response(mod_yield13, c("CLR_severity[all]"), 
-                 margin = "empirical",
-                 type = "response") %>%
-  plot(show_data = T) 
-
-predict_response(mod_yield13, c("CRBD_severity[all]"), 
-                 margin = "empirical",
-                 type = "response") %>%
-  plot(show_data = T) 
-predict_response(mod_yield13, c("distance[all]","Coffee_Variety"), 
-                 margin = "empirical",
-                 type = "response") %>%
-  plot(show_data = T) +
-  facet_wrap(~group)
-
-predict_response(mod_yield13, c("CLR_severity[all]","Coffee_Variety"), 
-                 margin = "empirical",
-                 type = "response") %>%
-  plot(show_residuals = T) +
-  facet_wrap(~group)
-predict_response(mod_yield13, c("CRBD_severity[all]","Coffee_Variety"), 
-                 margin = "empirical",
-                 type = "response") %>%
-  plot(show_residuals = T) +
-  facet_wrap(~group)
-```
 
 ### Slope comparison
 
@@ -427,6 +409,8 @@ yield_trend_shade %>%
                                       hjust =0.5),
   
           legend.text = element_text(colour = "black", size=13)) -> p_yield_trend
+
+p_yield_trend
 ```
 
 
@@ -434,44 +418,43 @@ yield_trend_shade %>%
 
 ```{r}
 ### Estimate slope values for severities and  severities*Coffee_Variety
-modelbased::estimate_slopes(mod_yield13, trend = "CLR_severity", by = "Coffee_Variety") %>%
+modelbased::estimate_slopes(mod_yield13, trend = "CLR_leaf_incidence", by = "Coffee_Variety") %>%
   as.data.frame %>%
   rename(factors = "Coffee_Variety") %>%
-  mutate(type = "Coffee variety : CLR severity") -> yield_trend_CLR_var
+  mutate(type = "Coffee variety : CLR leaf incidence") -> yield_trend_CLR_var
 
-modelbased::estimate_slopes(mod_yield13, trend = "CRBD_severity", by = "Coffee_Variety") %>%
+modelbased::estimate_slopes(mod_yield13, trend = "CRBD_leaf_incidence", by = "Coffee_Variety") %>%
   as.data.frame %>%
   rename(factors = "Coffee_Variety") %>%
-  mutate(type = "Coffee variety : CRBD severity") -> yield_trend_CRBD_var
+  mutate(type = "Coffee variety : BES leaf incidence") -> yield_trend_CRBD_var
 
-modelbased::estimate_slopes(mod_yield13, trend = "CLR_severity") %>%
+modelbased::estimate_slopes(mod_yield13, trend = "CLR_leaf_incidence") %>%
   as.data.frame %>%
-  mutate(type = "disease alone",
+  mutate(type = "Disease leaf incidence alone",
          factors ="CLR") -> yield_trend_CLR
-modelbased::estimate_slopes(mod_yield13, trend = "CWD_severity") %>%
+modelbased::estimate_slopes(mod_yield13, trend = "CWD_leaf_incidence") %>%
   as.data.frame %>%
-  mutate(type = "disease alone",
+  mutate(type = "Disease leaf incidence alone",
          factors ="CWD") -> yield_trend_CWD
-modelbased::estimate_slopes(mod_yield13, trend = "CRBD_severity") %>%
+modelbased::estimate_slopes(mod_yield13, trend = "CRBD_leaf_incidence") %>%
   as.data.frame %>%
-  mutate(type = "disease alone",
-         factors ="CRBD") -> yield_trend_CRBD
+  mutate(type = "Disease leaf incidence alone",
+         factors ="BES") -> yield_trend_BES
 
 yield_trend_CLR_var %>%
   bind_rows(yield_trend_CRBD_var) %>%
   bind_rows(yield_trend_CLR) %>%
   bind_rows(yield_trend_CWD) %>%
-  bind_rows(yield_trend_CRBD) %>%
+  bind_rows(yield_trend_BES) %>%
   mutate(factors = factor(factors, levels = c(as.character(yield_trend_CLR_var$factors),
                                               as.character(yield_trend_CLR$factors),
                                               as.character(yield_trend_CWD$factors),
-                                              as.character(yield_trend_CRBD$factors)
+                                              as.character(yield_trend_BES$factors)
                                         )),
-       type = factor(type, levels = c("disease alone",
-                                      "Coffee variety : CLR severity",
-                                      "Coffee variety : CWD severity",
-                                      "Coffee variety : CRBD severity"))) %>%
-  filter(Slope<10000) %>%
+                    type = factor(type, levels = c("Disease leaf incidence alone",
+                                      "Coffee variety : CLR leaf incidence",
+                                      "Coffee variety : CWD leaf incidence",
+                                      "Coffee variety : BES leaf incidence"))) %>%
   ggplot() +
     geom_hline(aes(yintercept = factors), cex =0.2, linetype = 1, color = "gray", alpha =0.3) +
     geom_pointrange(aes(y = factors, x = Slope, xmin = CI_low, xmax = CI_high, colour = type),
@@ -491,6 +474,8 @@ yield_trend_CLR_var %>%
                                       hjust =0.5),
   
           legend.text = element_text(colour = "black", size=13)) -> p_yield_trend_disease
+
+p_yield_trend_disease
 ```
 
 
@@ -537,11 +522,6 @@ get_significance_letters <- function(contrast_df, alpha = 0.05, level_col1 = "Le
 ```
 
 ```{r}
-library(modelbased)
-library(RColorBrewer)
-library(multcompView)
-
-
 #### Variety
 # Compute estimated mean for each variety
 modelbased::estimate_contrasts(mod_yield13,"Coffee_Variety",estimate = "typical", p_adjust = "fdr") -> contrast_variety_df
@@ -621,10 +601,13 @@ p_yield_variety +
   plot_annotation(tag_levels = 'A')
 ```
 
+# Figures article
+
 ```{r}
 p_yield_trend_disease
 p_yield_trend
 p_yield_variety
+
 ggsave(plot = p_yield_trend_disease, file="results/figures/yield_effect_plot_diseases.pdf",
 width=20, height=15,units ="cm")
 ggsave(plot = p_yield_trend, file="results/figures/yield_effect_plot_distance.pdf",
@@ -635,6 +618,7 @@ width=20, height=15, units ="cm")
 
 ```
 # Figures appendix
+
 ```{r}
 
 pdf(file ="results/figures/res_fruit_load.pdf",  
