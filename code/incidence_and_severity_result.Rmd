@@ -15,6 +15,7 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 
 ```{r include=FALSE}
 
+# Data manipulation and graphic packages
 library(tidyverse)
 library(readxl)
 library(GGally)
@@ -22,29 +23,12 @@ library(viridis)
 library(ggsci)
 library(patchwork)
 
+# Model and model values extraction packages
 library(glmmTMB)
 library(DHARMa)
 library(car)
 library(modelbased)
 library(performance)
-
-# 
-# 
-# 
-# library(ggsignif)
-# 
-# library(patchwork)
-# 
-# 
-# library(effects)
-# library(emmeans)
-# library(ggeffects)
-# 
-# library(interactions)
-# library(ggsci)
-
-
-# library(sf)
 
 main_theme = theme_minimal()+
   theme(aspect.ratio = 1,

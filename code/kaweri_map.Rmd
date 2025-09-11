@@ -5,17 +5,18 @@ date: "2025-09-05"
 ---
 
 ```{r, include=FALSE}
-
+# Data manipulation and graphic packages
 library(tidyverse)
 library(readxl)
-library(sf)
+library(parzer)
+library(viridis)
 
-
+# Map packages
 library(mapview)
 library(leaflet)
 library(leafem)
+library(sf)
 
-library(parzer)
 ```
 
 

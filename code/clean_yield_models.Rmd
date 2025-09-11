@@ -5,9 +5,13 @@ date: "2025-01-24"
 editor_options: 
   chunk_output_type: inline
 ---
+
 # Setup data and packages(no shown)
 ## 1 Load Packages
+
 ```{r  include=FALSE}
+
+# Data manipulation and graphic packages
 library(tidyverse)
 library(readxl)
 library(GGally)
@@ -15,13 +19,12 @@ library(viridis)
 library(ggsci)
 library(patchwork)
 
+# Model and model values extraction packages
 library(glmmTMB)
 library(DHARMa)
 library(car)
 library(modelbased)
 library(performance)
-
-
 
 main_theme = theme_minimal()+
   theme(line = element_blank(), 
@@ -39,7 +42,6 @@ main_theme = theme_minimal()+
 ```
 
 Function to convert GPS point to decimal degrees
-
 
 ```{r include=FALSE}
 convert_dms_to_dd <- function(dms) {
@@ -190,7 +192,7 @@ data_yield %>%
 str(data_yield2)
 ```
 
-# Yield (nbr berries per tree) explain with **leaf_incidence** 
+# Fruit load (yield) model
 
 ## Function of residuals check for models
 
