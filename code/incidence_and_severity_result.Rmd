@@ -13,6 +13,9 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 
 # 1 Load Packages
 
+
+
+
 ```{r include=FALSE}
 
 # Data manipulation and graphic packages
@@ -172,6 +175,48 @@ number_of_infected_leaves_or_berries %>%
 ```
 
 
+```{r include=FALSE}
+data_leaf_incidence %>%
+  filter(disease == "CWD") %>%
+  select(sample_code) %>%
+  distinct(sample_code) %>%
+  mutate(shade_tree = str_extract(sample_code,"(^[A-Za-z]+)(\\d+)(.{4})_(.{4})", group = 1),
+         coffe_shrub = str_extract(sample_code,"(^[A-Za-z]+\\d+)(.{4})_(.{4})", group = 2),
+         section = str_extract(sample_code,"(^[A-Za-z]+\\d+)(.{4})_(.{4})", group = 3)) -> temp
+
+table(temp$section)
+
+temp %>%
+  filter(section=="Kita") %>%
+  pull(shade_tree) %>%
+  table()/3
+
+temp %>%
+  filter(section=="Kite") %>%
+  pull(shade_tree) %>%
+  table()/3
+
+temp %>%
+  filter(section=="Kyam") %>%
+  pull(shade_tree) %>%
+  table()/3
+
+temp %>%
+  filter(section=="Luwu") %>%
+  pull(shade_tree) %>%
+  table()/3
+
+temp %>%
+  filter(section=="Nonv") %>%
+  pull(shade_tree) %>%
+  table()/3
+
+temp %>%
+  pull(shade_tree) %>%
+  table()/3
+```
+
+
 
 ## 2.3 Data cleaning
 
@@ -291,6 +336,42 @@ data_shrub_incidence %>%
   labs(x = " Shade tree", y = "Proportion", fill = "Whole shrub\n incidence") +
   main_theme
 ```
+```{r}
+ data_shrub_incidence %>%
+  filter(!(Coffee_Variety %in% c("Clone H", "Clone D"))) %>%
+   mutate(Coffee_Variety  = as.factor(as.character(Coffee_Variety))) -> data_shrub_incidence
+data_shrub_incidence %>%
+  filter( disease == "CWD") %>%
+  group_by(Shade_tree_species, Coffee_Variety) %>%
+  mutate(n_tot = n(),
+            infected_count = sum(shrub_incidence,na.rm  =T)) %>%
+  ggplot()+
+  facet_wrap(~Coffee_Variety) +
+  geom_bar(aes(Shade_tree_species))+
+  geom_text(aes(x=Shade_tree_species, y=1.5,group = Shade_tree_species, label = n_tot)) +
+
+  labs(x = " Shade tree", y = "n replicats of the combinaison") +
+  main_theme
+```
+
+```{r}
+data_shrub_incidence %>%
+  filter(!(Coffee_Variety %in% c("Clone H", "Clone D"))) %>%
+   mutate(Coffee_Variety  = as.factor(as.character(Coffee_Variety))) -> data_shrub_incidence
+data_shrub_incidence %>%
+  filter( disease == "CWD") %>%
+  group_by(Section_of_kawerie, Coffee_Variety) %>%
+  mutate(n_tot = n(),
+            infected_count = sum(shrub_incidence,na.rm  =T)) %>%
+  ggplot()+
+  facet_wrap(~Coffee_Variety) +
+  geom_bar(aes(Section_of_kawerie))+
+  geom_text(aes(x=Section_of_kawerie, y=1.5,group = Section_of_kawerie, label = n_tot)) +
+
+  labs(x = " Shade Section_of_kawerie", y = "n replicats of the combinaison") +
+  main_theme
+```
+
 
 ```{r include=FALSE}
 data_leaf_incidence %>%
@@ -335,7 +416,7 @@ shrub_incidence.mod.func <- function(data,
 
 ### Compute models
 
-Try different model, the only constrain is that we keep "distance*Shade_tree_species + (1|Shade_tree_soil_sample_CODE)" .
+Try different model, the only constrain is that we keep "distance*Shade_tree_species + (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)" .
 "distance*Shade_tree_species" : are main effect and interaction in which we are interested 
 "Shade_tree_soil_sample_CODE" : random effect to correct autocorrelation at the shade tree level. 
 We incremental add variables or interaction to correct residuals expectation, and limit correlation between residuals and variables of interest
@@ -344,21 +425,22 @@ We incremental add variables or interaction to correct residuals expectation, an
 data_shrub_incidence %>%
   filter(disease == "CWD") -> binary_data_CWD
 
+table(binary_data_CWD$Shade_tree_soil_sample_CODE) %>% length()
 ## Compute binomial glm  
 binary_data_CWD %>%
-  shrub_incidence.mod.func(frml = "shrub_incidence ~ Shade_tree_species * distance + (1|Shade_tree_soil_sample_CODE)") -> mod_binary_shrub_incidence_CWD1
+  shrub_incidence.mod.func(frml = "shrub_incidence ~ Shade_tree_species * distance + (1|Section_of_kawerie/Shade_tree_soil_sample_CODE)") -> mod_binary_shrub_incidence_CWD1
 binary_data_CWD %>%
   shrub_incidence.mod.func(frml = "shrub_incidence ~ Shade_tree_species * distance  + Coffee_Variety +
-                                  (1|Shade_tree_soil_sample_CODE)") -> mod_binary_shrub_incidence_CWD2
+                                  (1|Section_of_kawerie/Shade_tree_soil_sample_CODE)") -> mod_binary_shrub_incidence_CWD2
 binary_data_CWD %>%
   shrub_incidence.mod.func(frml = "shrub_incidence ~ Shade_tree_species * (distance + Coffee_Variety) +
-                                   (1|Shade_tree_soil_sample_CODE)") -> mod_binary_shrub_incidence_CWD3
+                                   (1|Section_of_kawerie/Shade_tree_soil_sample_CODE)") -> mod_binary_shrub_incidence_CWD3
 binary_data_CWD %>%
   shrub_incidence.mod.func(frml = "shrub_incidence ~ Shade_tree_species * (distance + Coffee_Variety )+
-                                  distance:Coffee_Variety  + (1|Shade_tree_soil_sample_CODE)") -> mod_binary_shrub_incidence_CWD4
+                                  distance:Coffee_Variety  + (1|Section_of_kawerie/Shade_tree_soil_sample_CODE)") -> mod_binary_shrub_incidence_CWD4
 binary_data_CWD %>%
   shrub_incidence.mod.func(frml = "shrub_incidence ~ Shade_tree_species * distance * Coffee_Variety +
-                                    + (1|Shade_tree_soil_sample_CODE)") -> mod_binary_shrub_incidence_CWD5
+                                    + (1|Section_of_kawerie/Shade_tree_soil_sample_CODE)") -> mod_binary_shrub_incidence_CWD5
 ```
 
 
@@ -417,23 +499,34 @@ get_significance_letters <- function(contrast_df, alpha = 0.05, level_col1 = "Le
 }
 ```
 
-
 ```{r}
-modelbased::estimate_contrasts(mod_binary_shrub_incidence_CWD2 ,
-                               "Coffee_Variety", estimate = "typical", p_adjust = "fdr") -> contrast_shrub_incidence_variety_df
 
-get_significance_letters(contrast_shrub_incidence_variety_df) %>%
+marginaleffects::avg_predictions(
+  mod_binary_shrub_incidence_CWD2,
+  by = "Coffee_Variety",
+  type = "response"
+) -> shrub_incidence_variety 
+
+marginaleffects::avg_comparisons(
+  mod_binary_shrub_incidence_CWD2,
+  variables = list(Coffee_Variety = "pairwise")
+) -> contrast_shrub_incidence_variety_df
+
+# estimate_relation(mod_leaf_incidence_BES_leaves_top6, by = c("Coffee_Variety") ) -> BES_leaf_incidence_variety
+# 
+# estimate_contrasts(BES_leaf_incidence_variety, contrast = c("Coffee_Variety"), p_adjust = "fdr") -> contrast_BES_leaf_incidence_variety_df
+# str(contrast_BES_leaf_incidence_variety_df)
+# contrast_BES_leaf_incidence_variety_df %>% str
+
+get_significance_letters2(contrast_shrub_incidence_variety_df) %>%
   mutate(variable = factor(variable , levels = levels(data_shrub_incidence$Coffee_Variety))) %>%
   arrange(variable) %>%
   mutate(x= as.numeric(variable))-> compl_letter_shrub_incidence_var
-
-modelbased::estimate_means(mod_binary_shrub_incidence_CWD2,"Coffee_Variety",estimate = "typical") -> shrub_incidence_variety
-
-shrub_incidence_variety %>% 
-  as.data.frame() %>%
+str(shrub_incidence_variety)
+shrub_incidence_variety %>%
   ggplot() +
     geom_pointrange(
-    aes(x= Coffee_Variety , y = Probability , ymin = CI_low, ymax = CI_high),
+    aes(x= Coffee_Variety , y = estimate , ymin = conf.low, ymax = conf.high),
     size = 0.75,linewidth = 1
   ) +
   geom_text(data = compl_letter_shrub_incidence_var, aes(x = x, y =0.95, label = .group), vjust = 0) +
@@ -454,7 +547,44 @@ p1_shrub_incidence
 
 
 ```{r}
-modelbased::estimate_means(mod_binary_shrub_incidence_CWD2, by = c("distance", "Shade_tree_species"), estimate ="typical", backend = "marginaleffects") %>% 
+estimate_means
+modelbased::estimate_expectation(mod_binary_shrub_incidence_CWD2,by = "Coffee_Variety") -> shrub_incidence_variety
+
+modelbased::estimate_contrasts(shrub_incidence_variety ,
+                               contrast="Coffee_Variety", p_adjust = "fdr") -> contrast_shrub_incidence_variety_df
+
+get_significance_letters(contrast_shrub_incidence_variety_df) %>%
+  mutate(variable = factor(variable , levels = levels(data_shrub_incidence$Coffee_Variety))) %>%
+  arrange(variable) %>%
+  mutate(x= as.numeric(variable))-> compl_letter_shrub_incidence_var
+
+
+
+shrub_incidence_variety %>%
+  ggplot() +
+    geom_pointrange(
+    aes(x= Coffee_Variety , y = Predicted , ymin = CI_low, ymax = CI_high),
+    size = 0.75,linewidth = 1
+  ) +
+  geom_text(data = compl_letter_shrub_incidence_var, aes(x = x, y =0.95, label = .group), vjust = 0) +
+  scale_y_continuous(limits = c(0,1)) +
+  labs(x= "Coffee Varieties", y = "CWD shrub incidence probability") +
+  theme_classic() +
+  theme(aspect.ratio = 1,
+        axis.line = element_line(colour = "black"),
+        panel.border = element_blank(),
+        axis.ticks =  element_line(colour = "black"),
+        axis.text.x = element_text(colour = "black", size=13, face="italic", angle = 25, vjust = 1, hjust =1),
+        axis.text.y = element_text(colour = "black", size=13, face="italic"),
+        legend.text = element_text(colour = "black", size=18),
+        axis.title= element_text(size=16,face="bold"),
+        strip.text = element_text(colour = "black", size=15, face ="italic")) -> p1_shrub_incidence
+p1_shrub_incidence
+```
+
+
+```{r}
+modelbased::estimate_means(mod_binary_shrub_incidence_CWD2, by = c("distance", "Shade_tree_species"), backend = "emmeans") %>% 
   as.data.frame() %>%
   ggplot()+
   geom_ribbon(aes(distance,Probability, ymin= CI_low, ymax = CI_high, fill = Shade_tree_species), alpha = 0.3, linewidth = 1) +
@@ -476,7 +606,7 @@ modelbased::estimate_means(mod_binary_shrub_incidence_CWD2, by = c("distance", "
 p2_shrub_incidence
 
 #Slope pairwise comparison shade tree
-modelbased::estimate_slopes(mod_binary_shrub_incidence_CWD2, trend = "distance", by = "Shade_tree_species")
+modelbased::estimate_slopes(mod_binary_shrub_incidence_CWD2, trend = "distance", by = "Shade_tree_species", backend = "emmeans")
 ```
 
 
@@ -570,7 +700,6 @@ disease_correlation_plot
 ```
 
 
-
 ### 4.2 Leaf incidence model and residual function
 
 ```{r include=FALSE}
@@ -609,11 +738,11 @@ leaf_incidence.mod.func <- function(data,
 ```
 
 ```{r include=FALSE}
-data_leaf_incidence%>%
+data_leaf_incidence %>%
   ggplot() +
   facet_wrap(~disease) +
   geom_point(aes(x = log_total_count, y = leaf_incidence)) +
-  labs(x = "Log(Total leaf count)", "Diseases leaf incidence proportion") +
+  labs(x = "Log(Total leaf count)", y = "Diseases leaf incidence proportion") +
   main_theme
 ```
 
@@ -636,10 +765,24 @@ Select only top portion of the shrub and change leaf incidence of 1 to 0.999 to 
 data_leaf_incidence_BES_leaves %>%
   filter(portion =="Top", !is.na(leaf_incidence)) %>%
   mutate(leaf_incidence = case_when(leaf_incidence == 1 ~ 0.999,
-                                    .default = leaf_incidence))-> BES_leaves_top
+                                    .default = leaf_incidence)) %>%
+  droplevels() -> BES_leaves_top
+  # group_by(sample_code)%>%
+  # summarise(infected_count = sum(infected_count),
+  #           disease = unique(disease),
+  #           organ = unique(organ),
+  #           portion = unique(portion),
+  #           total_count = sum(total_count),
+  #           leaf_incidence = mean(leaf_incidence, na.rm = T),
+  #           Shade_tree_species = unique(Shade_tree_species),
+  #           Section_of_Kaweri = unique(Section_of_Kaweri),
+  #           Coffee_Variety = unique(Coffee_Variety),
+  #           distance = unique(distance),
+  #           Shade_tree_soil_sample_CODE = unique(Shade_tree_soil_sample_CODE),
+  #           log_total_count = log(total_count))
 ```
 
-Try different model, the only constrain is that we keep "distance*Shade_tree_species + (1|Shade_tree_soil_sample_CODE)" .
+Try different model, the only constrain is that we keep "distance*Shade_tree_species + (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)" .
 "distance*Shade_tree_species" : are main effect and interaction in which we are interested 
 "Shade_tree_soil_sample_CODE" : random effect to correct autocorrelation between shrub at the shade tree level. 
 We incremental add variables or interaction to correct residuals expectation, and limit correlation between residuals and variables of interest
@@ -647,121 +790,121 @@ We incremental add variables or interaction to correct residuals expectation, an
 ```{r include=FALSE}
 
 BES_leaves_top%>%
-  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species *distance   + (1|Shade_tree_soil_sample_CODE)"),
+  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species *distance   + (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~1")) -> mod_leaf_incidence_BES_leaves_top
 
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance   + Coffee_Variety +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~1")) -> mod_leaf_incidence_BES_leaves_top2
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance   + Coffee_Variety +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top3
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance   + 
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                               zifrml = formula("~Coffee_Variety ")) -> mod_leaf_incidence_BES_leaves_top4
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance   +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top5
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~log_total_count")) -> mod_leaf_incidence_BES_leaves_top6
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Shade_tree_species"),
                     disprml = formula("~log_total_count")) -> mod_leaf_incidence_BES_leaves_top6_test
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + Coffee_Variety +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~log_total_count")) -> mod_leaf_incidence_BES_leaves_top8
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + Coffee_Variety +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top9
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + Coffee_Variety + Coffee_Variety:distance +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~log_total_count")) -> mod_leaf_incidence_BES_leaves_top8_bis
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + Coffee_Variety + Coffee_Variety:distance +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top9_bis
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*(distance + Coffee_Variety) +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~log_total_count")) -> mod_leaf_incidence_BES_leaves_top10
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*(distance + Coffee_Variety) +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top11
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*(distance + Coffee_Variety) + distance:Coffee_Variety+
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~log_total_count")) -> mod_leaf_incidence_BES_leaves_top12
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*(distance + Coffee_Variety) + distance:Coffee_Variety+
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top13
 
 # convegence issues
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance * Coffee_Variety +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~log_total_count")) -> mod_leaf_incidence_BES_leaves_top14
 
 BES_leaves_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance * Coffee_Variety +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml = formula("~Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top15
 
 ## Some models we've tested, either bad residuals or to complex to interpret
 # BES_leaves_top%>%
 #   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance+
-#                                             (1|Shade_tree_soil_sample_CODE)"),
+#                                             (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
 #                     zifrml = formula("~Coffee_Variety"),
 #                     disprml = formula("~log_total_count*Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top10
 # BES_leaves_top%>%
 #   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*(distance+Coffee_Variety)+
-#                                             (1|Shade_tree_soil_sample_CODE)"),
+#                                             (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
 #                     zifrml = formula("~Coffee_Variety"),
 #                     disprml = formula("~log_total_count*Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top11
 # BES_leaves_top%>%
 #   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*(distance+Coffee_Variety) + distance:Coffee_Variety+
-#                                             (1|Shade_tree_soil_sample_CODE)"),
+#                                             (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
 #                     zifrml = formula("~Coffee_Variety"),
 #                     disprml = formula("~log_total_count*Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top12
 # 
 # BES_leaves_top%>%
 #   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance+
-#                                             (1|Shade_tree_soil_sample_CODE)"),
+#                                             (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
 #                     zifrml = formula("~Coffee_Variety"),
 #                     disprml = formula("~log_total_count+Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top10_bis
 # BES_leaves_top%>%
 #   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*(distance+Coffee_Variety)+
-#                                             (1|Shade_tree_soil_sample_CODE)"),
+#                                             (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
 #                     zifrml = formula("~Coffee_Variety"),
 #                     disprml = formula("~log_total_count+Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top11_bis
 # 
 # BES_leaves_top%>%
 #   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*(distance+Coffee_Variety) + distance:Coffee_Variety+
-#                                             (1|Shade_tree_soil_sample_CODE)"),
+#                                             (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
 #                     zifrml = formula("~Coffee_Variety"),
 #                     disprml = formula("~log_total_count+Coffee_Variety")) -> mod_leaf_incidence_BES_leaves_top12_bis
 
@@ -806,18 +949,69 @@ car::Anova(mod_leaf_incidence_BES_leaves_top6, component = "disp")
 #                               data = BES_leaves_top),
 #             model_component ="full")
 ```
+```{r}
+# Function to get significance letter from a contrast dataframe (pairwise comparison dataframe)
+get_significance_letters2 <- function(contrast_df =contrast_BES_leaf_incidence_variety_df, alpha = 0.05, level_col1 = "Level1", level_col2 = "Level2") {
+  # Extract levels
+  
+  split_contrast <- contrast_df$contrast %>% str_split(" - ",simplify = TRUE)
+  l1 <- split_contrast[,1]
+  l2 <- split_contrast[,2]
+  
+  all_levels <- unique(c(l1, l2))
+  # Initialize an empty matrix of p-values
+  pmat <- matrix(NA, nrow = length(all_levels), ncol = length(all_levels),
+                 dimnames = list(all_levels, all_levels))
+
+  # Fill in the matrix with provided p-values
+
+  for (i in seq_len(nrow(contrast_df))) {
+    pval <- contrast_df$p.value[i]
+    pmat[l1[i], l2[i]] <- pval
+    pmat[l2[i], l1[i]] <- pval
+  }
+  # Generate letters using multcompView
+  comp <- multcompView::multcompLetters(pmat<0.05,compare = "<")$Letters
+
+  # Prepare output dataframe
+  output <- data.frame(
+    variable = factor(names(comp), levels = all_levels),
+    .group = comp,
+    stringsAsFactors = FALSE
+  )
+
+  return(output)
+}
+```
 
 
 ```{r}
-modelbased::estimate_contrasts(mod_leaf_incidence_BES_leaves_top6,"Coffee_Variety",estimate = "typical", p_adjust = "fdr") -> contrast_BES_leaf_incidence_variety_df
-get_significance_letters(contrast_BES_leaf_incidence_variety_df) %>%
+marginaleffects::avg_predictions(
+  mod_leaf_incidence_BES_leaves_top6,
+  by = "Coffee_Variety",
+  type = "response"
+) -> BES_leaf_incidence_variety 
+
+marginaleffects::avg_comparisons(
+  mod_leaf_incidence_BES_leaves_top6,
+  variables = list(Coffee_Variety = "pairwise")
+) -> contrast_BES_leaf_incidence_variety_df
+
+# estimate_relation(mod_leaf_incidence_BES_leaves_top6, by = c("Coffee_Variety") ) -> BES_leaf_incidence_variety
+# 
+# estimate_contrasts(BES_leaf_incidence_variety, contrast = c("Coffee_Variety"), p_adjust = "fdr") -> contrast_BES_leaf_incidence_variety_df
+# str(contrast_BES_leaf_incidence_variety_df)
+# contrast_BES_leaf_incidence_variety_df %>% str
+
+get_significance_letters2(contrast_BES_leaf_incidence_variety_df) %>%
   mutate(variable = factor(variable , levels = levels(BES_leaves_top$Coffee_Variety))) %>%
   arrange(variable) %>%
   mutate(x= as.numeric(variable))-> compl_letter_BES_leaf_incidence_var
 
-modelbased::estimate_means(mod_leaf_incidence_BES_leaves_top6,"Coffee_Variety",estimate = "typical") -> BES_leaf_incidence_variety
-ggplot(BES_leaf_incidence_variety, aes(x = Coffee_Variety, y = Proportion)) +
-  geom_pointrange(aes(ymin = CI_low, ymax = CI_high), linewidth = 1) +
+
+
+ggplot(BES_leaf_incidence_variety, aes(x = Coffee_Variety, y = estimate)) +
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), linewidth = 1) +
    geom_text(data = compl_letter_BES_leaf_incidence_var, aes(x = x, y =0.15, label = .group), vjust = 0)+
   labs(x= "Variety", y = "BES leaf incidence proportion")+
   theme_classic()+
@@ -848,60 +1042,60 @@ data_leaf_incidence_CWD %>%
                               .default = leaf_incidence))-> CWD_top
 ```
 
-Try different model, the only constrain is that we keep "distance*Shade_tree_species + (1|Shade_tree_soil_sample_CODE)" .
+Try different model, the only constrain is that we keep "distance*Shade_tree_species + (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)" .
 "distance*Shade_tree_species" : are main effect and interaction in which we are interested 
 "Shade_tree_soil_sample_CODE" : random effect to correct autocorrelation between shrub at the shade tree level. 
 We incremental add variables or interaction to correct residuals expectation, and limit correlation between residuals and variables of interest
 
 ```{r include=FALSE}
 CWD_top%>%
-  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + (1|Shade_tree_soil_sample_CODE)"),
+  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml =  formula("~1")) -> mod_leaf_incidence_CWD_top
 
 
 CWD_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance   + Coffee_Variety + 
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                      zifrml =  formula("~1")) -> mod_leaf_incidence_CWD_top2
 CWD_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance+(distance*Coffee_Variety) +
-                                   (1|Shade_tree_soil_sample_CODE)"),
+                                   (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml =  formula("~1")) -> mod_leaf_incidence_CWD_top2_bis
 CWD_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance  + 
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_leaf_incidence_CWD_top3
 CWD_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance   + Coffee_Variety + 
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_leaf_incidence_CWD_top4
 CWD_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance  + 
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                               zifrml = formula("~Shade_tree_species")) -> mod_leaf_incidence_CWD_top5
 CWD_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance  + 
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                               zifrml = formula("~Coffee_Variety")) -> mod_leaf_incidence_CWD_top6
 CWD_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + Coffee_Variety+
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                               zifrml = formula("~Coffee_Variety"),
                               disprml= formula("~log_total_count"))-> mod_leaf_incidence_CWD_top7
 CWD_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + Coffee_Variety+Coffee_Variety:distance+
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                               zifrml = formula("~Coffee_Variety"),
                               disprml= formula("~log_total_count"))-> mod_leaf_incidence_CWD_top8
 
 ### adding more to the model lead to non-convergence issues
 CWD_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance*Coffee_Variety +
-                                   (1|Shade_tree_soil_sample_CODE)"),
+                                   (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml =  formula("~1")) -> mod_leaf_incidence_CWD_top9
 CWD_top%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*(distance + Coffee_Variety) +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                               zifrml = formula("~Coffee_Variety"),
                               disprml= formula("~log_total_count"))-> mod_leaf_incidence_CWD_top10
 ```
@@ -995,7 +1189,7 @@ data_leaf_incidence_CLR %>%
                               .default = leaf_incidence)) -> CLR_low
 ```
 
-Try different model, the only constrain is that we keep "distance*Shade_tree_species + (1|Shade_tree_soil_sample_CODE)" .
+Try different model, the only constrain is that we keep "distance*Shade_tree_species + (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)" .
 "distance*Shade_tree_species" : are main effect and interaction in which we are interested 
 "Shade_tree_soil_sample_CODE" : random effect to correct autocorrelation between shrub at the shade tree level. 
 We incremental add variables or interaction to correct residuals expectation, and limit correlation between residuals and variables of interest
@@ -1003,83 +1197,83 @@ We incremental add variables or interaction to correct residuals expectation, an
 ```{r include=FALSE}
 CLR_low %>%
  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + 
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                    zifrml =  formula("~1")) -> mod_leaf_incidence_CLR_low
 CLR_low %>%
  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance   + Coffee_Variety + 
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                    zifrml = formula("~1")) -> mod_leaf_incidence_CLR_low2
 
 CLR_low %>%
  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance    + 
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                    zifrml = formula("~Coffee_Variety")) -> mod_leaf_incidence_CLR_low3
 CLR_low %>%
  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance    + Coffee_Variety+
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                    zifrml = formula("~Coffee_Variety")) -> mod_leaf_incidence_CLR_low4
 CLR_low%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + 
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Shade_tree_species")) -> mod_leaf_incidence_CLR_low5
 CLR_low%>%
   leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + Coffee_Variety+
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Shade_tree_species")) -> mod_leaf_incidence_CLR_low6
 
 CLR_low %>%
  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + Coffee_Variety +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml =formula("~Coffee_Variety") ) -> mod_leaf_incidence_CLR_low7
 
 CLR_low %>%
  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + Coffee_Variety +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml =formula("~log_total_count") ) -> mod_leaf_incidence_CLR_low8
 
 CLR_low %>%
  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + Coffee_Variety*distance +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml =formula("~log_total_count") ) -> mod_leaf_incidence_CLR_low9
 CLR_low %>%
  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance + Coffee_Variety*distance + Shade_tree_species:Coffee_Variety +
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml =formula("~log_total_count")) -> mod_leaf_incidence_CLR_low10
 
 CLR_low %>%
  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance *Coffee_Variety+
-                                            (1|Shade_tree_soil_sample_CODE)"),
+                                            (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
                     zifrml = formula("~Coffee_Variety"),
                     disprml =formula("~log_total_count") ) -> mod_leaf_incidence_CLR_low11
 
 ## Some models I've tested, either bad residuals or to complex to interpret
 # CLR_low %>%
 #  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance *Coffee_Variety+
-#                                             (1|Shade_tree_soil_sample_CODE)"),
+#                                             (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
 #                     zifrml = formula("~Coffee_Variety"),
 #                     disprml =formula("~log_total_count+Coffee_Variety")) -> mod_leaf_incidence_CLR_low12
 # CLR_low %>%
 #  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance *Coffee_Variety+ Shade_tree_species:Coffee_Variety +
-#                                             (1|Shade_tree_soil_sample_CODE)"),
+#                                             (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
 #                     zifrml = formula("~Coffee_Variety"),
 #                     disprml =formula("~log_total_count+Coffee_Variety")) -> mod_leaf_incidence_CLR_low13
 # CLR_low %>%
 #  leaf_incidence.mod.func(frml = formula("leaf_incidence ~  Shade_tree_species*distance + Coffee_Variety*distance +
-#                                             (1|Shade_tree_soil_sample_CODE)"),
+#                                             (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
 #                     zifrml = formula("~Coffee_Variety"),
 #                     disprml =formula("~log_total_count*Coffee_Variety")) -> mod_leaf_incidence_CLR_low14
 # CLR_low %>%
 #  leaf_incidence.mod.func(frml = formula("leaf_incidence ~  Shade_tree_species*distance + Coffee_Variety*distance + Shade_tree_species:Coffee_Variety +
-#                                             (1|Shade_tree_soil_sample_CODE)"),
+#                                             (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
 #                     zifrml = formula("~Coffee_Variety"),
 #                     disprml =formula("~log_total_count*Coffee_Variety")) -> mod_leaf_incidence_CLR_low15
 # CLR_low %>%
 #  leaf_incidence.mod.func(frml = formula("leaf_incidence ~ Shade_tree_species*distance *Coffee_Variety+
-#                                             (1|Shade_tree_soil_sample_CODE)"),
+#                                             (1|Section_of_Kaweri/Shade_tree_soil_sample_CODE/branch)"),
 #                     zifrml = formula("~Coffee_Variety"),
 #                     disprml =formula("~log_total_count*Coffee_Variety")) -> mod_leaf_incidence_CLR_low16
 
