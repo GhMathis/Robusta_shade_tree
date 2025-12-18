@@ -423,7 +423,8 @@ We incremental add variables or interaction to correct residuals expectation, an
 
 ```{r}
 data_shrub_incidence %>%
-  filter(disease == "CWD") -> binary_data_CWD
+  filter(disease == "CWD") %>% 
+  droplevels() -> binary_data_CWD
 
 table(binary_data_CWD$Shade_tree_soil_sample_CODE) %>% length()
 ## Compute binomial glm  
@@ -441,6 +442,7 @@ binary_data_CWD %>%
 binary_data_CWD %>%
   shrub_incidence.mod.func(frml = "shrub_incidence ~ Shade_tree_species * distance * Coffee_Variety +
                                     + (1|Section_of_kawerie/Shade_tree_soil_sample_CODE)") -> mod_binary_shrub_incidence_CWD5
+str(binary_data_CWD)
 ```
 
 
@@ -500,15 +502,22 @@ get_significance_letters <- function(contrast_df, alpha = 0.05, level_col1 = "Le
 ```
 
 ```{r}
+insight::get_datagrid(mod_binary_shrub_incidence_CWD2)
+mod_binary_shrub_incidence_CWD2$frame
 
-marginaleffects::avg_predictions(
+marginaleffects::datagrid(model = mod_binary_shrub_incidence_CWD2,
+                          by = "Coffee_Variety",
+                          grid_type = "balanced") -> balanced_grid_shrub_incidence_CWD
+marginaleffects::predictions(
   mod_binary_shrub_incidence_CWD2,
+  newdata = "balanced",
   by = "Coffee_Variety",
   type = "response"
 ) -> shrub_incidence_variety 
 
 marginaleffects::avg_comparisons(
   mod_binary_shrub_incidence_CWD2,
+  newdata = "balanced",
   variables = list(Coffee_Variety = "pairwise")
 ) -> contrast_shrub_incidence_variety_df
 
