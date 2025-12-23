@@ -342,6 +342,10 @@ yield_trend_shade %>%
   
           legend.text = element_text(colour = "black", size=13)) -> p_yield_trend
 
+
+yield_trend_shade %>%
+  bind_rows(yield_trend_var) %>%
+  bind_rows(yield_trend) %>% view
 p_yield_trend
 ```
 
@@ -349,51 +353,40 @@ p_yield_trend
 #### Disease and interaction
 
 ```{r}
-marginaleffects::datagrid(model = selected_berrie_model, CLR_leaf_incidence = c(0,0.20,0.40, 0.60, 0.80,1), Coffee_Variety =c("Clone A", "Clone B", "Clone C", "Clone F", "Op1", "Op2") , grid_type = "counterfactual") -> datagrid_berrie_CLR
-marginaleffects::datagrid(model = selected_berrie_model, CLR_leaf_incidence = c(0,0.20,0.40, 0.60, 0.80,1), grid_type = "counterfactual") -> datagrid_berrie_CLR2
-
-marginaleffects::datagrid(model = selected_berrie_model, CLR_leaf_incidence = c(0,0.20,0.40, 0.60, 0.80,1), Coffee_Variety =c("Clone A", "Clone B", "Clone C", "Clone F", "Op1", "Op2") , grid_type = "counterfactual") -> datagrid_berrie_BES
-marginaleffects::datagrid(model = selected_berrie_model, CLR_leaf_incidence = c(0,0.20,0.40, 0.60, 0.80,1), grid_type = "counterfactual") -> datagrid_berrie_BES2
-
-marginaleffects::datagrid(model = selected_berrie_model, CLR_leaf_incidence = c(0,0.20,0.40, 0.60, 0.80,1), Coffee_Variety =c("Clone A", "Clone B", "Clone C", "Clone F", "Op1", "Op2") , grid_type = "counterfactual") -> datagrid_berrie_CWD
-marginaleffects::datagrid(model = selected_berrie_model, CLR_leaf_incidence = c(0,0.20,0.40, 0.60, 0.80,1), grid_type = "counterfactual") -> datagrid_berrie_CWD2
-
 ### Estimate slope values for severities and  severities*Coffee_Variety
 
 marginaleffects::avg_slopes(selected_berrie_model,
                             variables = "CLR_leaf_incidence",
-                            by = "Coffee_Variety", newdata = datagrid_berrie_CLR) %>%
+                            by = "Coffee_Variety") %>%
   as.data.frame %>%
   rename(factors = "Coffee_Variety") %>%
   mutate(type = "Coffee variety : CLR leaf incidence") -> yield_trend_CLR_var
 
 marginaleffects::avg_slopes(selected_berrie_model,
                             variables = "CRBD_leaf_incidence",
-                            by = "Coffee_Variety", newdata = datagrid_berrie_BES) %>%
+                            by = "Coffee_Variety") %>%
   as.data.frame %>%
   rename(factors = "Coffee_Variety") %>%
   mutate(type = "Coffee variety : BES leaf incidence") -> yield_trend_CRBD_var
 
 marginaleffects::avg_slopes(selected_berrie_model,
                             variables = "CWD_leaf_incidence",
-                            by = "Coffee_Variety", newdata = datagrid_berrie_CWD) %>%
+                            by = "Coffee_Variety") %>%
   as.data.frame %>%
   rename(factors = "Coffee_Variety") %>%
   mutate(type = "Coffee variety : CWD leaf incidence") -> yield_trend_CWD_var
 
-marginaleffects::avg_slopes(selected_berrie_model, variables = "CLR_leaf_incidence",
-                            newdata = datagrid_berrie_CLR2) %>%
+marginaleffects::avg_slopes(selected_berrie_model, variables = "CLR_leaf_incidence") %>%
   as.data.frame %>%
   mutate(type = "Disease leaf incidence alone",
          factors ="CLR") -> yield_trend_CLR
 
-marginaleffects::avg_slopes(selected_berrie_model, variables = "CWD_leaf_incidence",
-                            newdata = datagrid_berrie_CWD2) %>%
+marginaleffects::avg_slopes(selected_berrie_model, variables = "CWD_leaf_incidence") %>%
   as.data.frame %>%
   mutate(type = "Disease leaf incidence alone",
          factors ="CWD") -> yield_trend_CWD
 
-marginaleffects::avg_slopes(selected_berrie_model, variables = "CRBD_leaf_incidence", newdata = datagrid_berrie_BES2) %>%
+marginaleffects::avg_slopes(selected_berrie_model, variables = "CRBD_leaf_incidence") %>%
   as.data.frame %>%
   mutate(type = "Disease leaf incidence alone",
          factors ="BES") -> yield_trend_BES
@@ -432,8 +425,14 @@ yield_trend_CLR_var %>%
   
           legend.text = element_text(colour = "black", size=13)) -> p_yield_trend_disease
 
-p_yield_trend_disease
+yield_trend_CLR_var %>%
+  bind_rows(yield_trend_CRBD_var) %>%
+  bind_rows(yield_trend_CWD_var) %>%
+  bind_rows(yield_trend_CLR) %>%
+  bind_rows(yield_trend_CWD) %>%
+  bind_rows(yield_trend_BES) %>% view
 
+p_yield_trend_disease
 ```
 
 
@@ -531,6 +530,8 @@ data_yield2 %>%
                                     hjust =0.5),
 
         legend.text = element_text(colour = "black", size=13)) -> p_yield_variety
+
+yield_variety
 p_yield_variety
 ```
 
