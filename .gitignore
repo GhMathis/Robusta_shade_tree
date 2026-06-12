@@ -6,7 +6,7 @@
 *.table*
 *.gz
 *.txt
-*.csv
+
 *.zip
 *.html
 *.docx
@@ -17,4 +17,3 @@
 !screen_shot.png
 /results/figures/map_uganda_files
 /data/R_PhD_Data_corrected.xlsx
-/data/R_PhD_Data_corrected2.xlsx
