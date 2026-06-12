@@ -6,9 +6,9 @@
 
 `code` : contain three scripts for Incidence model, fruit load model and map creation
 
-`data` : Contain shape files for maps and `R_PhD_Data_corrected2.xlsx`excel file that contain all the data needed
+`data` : Contain shape files for maps and `R_PhD_Data_corrected2.xlsx`excel file that contain all the raw data needed
 
-`output` : A file if you need to save environment
+`output` : A file if you need to save environment. It contain also all the data in .csv files with a more conventional format
 
 `results` : Were all the figures are saved
 
