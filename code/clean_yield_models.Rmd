@@ -111,6 +111,7 @@ data %>%
   
   ungroup() -> covariate_data
 
+write.csv(covariate_data, "outputs/covariate_data.csv")
 ```
 
 
@@ -181,6 +182,8 @@ number_of_infected_leaves_or_berries %>%
             CLR_leaf_incidence = CLR_infected_leaves/leaves,
             CRBD_leaf_incidence = CRBD_infected_leaves/leaves,
             CRBD_leaf_incidence_berries = CRBD_infected_berries/(berries+1)) -> data_yield
+
+write.csv(data_yield, "outputs/data_yield.csv")
 
 ##Remove shrubs with no leaves (dead shrub). Remove all Clone H and D
 data_yield %>%

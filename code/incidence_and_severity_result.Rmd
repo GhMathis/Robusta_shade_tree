@@ -113,7 +113,9 @@ data %>%
    # extract the section name and mutate character column to factor
    mutate(Section_of_kawerie = str_extract(sample_code,"(?<=_).+"),
           across(where(is.character), ~as.factor(.x)))-> data_shrub_incidence
+
 str(data_shrub_incidence)
+write.csv(data_shrub_incidence, "outputs/data_shrub_incidence.csv")
 ```
 
 ## 2.2 Compute disease incidence at leaves level for each branch
@@ -172,6 +174,8 @@ number_of_infected_leaves_or_berries %>%
                             .default = total_count),
     log_total_count = log(total_count),
     across(where(is.character),~as.factor(.x))) -> data_leaf_incidence
+
+write.csv(data_leaf_incidence, "outputs/data_leaf_incidence.csv")
 ```
 
 
