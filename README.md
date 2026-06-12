@@ -14,7 +14,7 @@
 
 ### How to use it
 
-If yo don't now how to use git just click on :
+If you don't now how to use git just click on:
 
 1. Code
 2. download to zip
@@ -24,7 +24,7 @@ If yo don't now how to use git just click on :
 Then you can run each scripts independently and all the figures will be produced in `results\figures`
 
 
-### Pacakges and R versions
+### Packages and R versions
 
 sessionInfo()
 
