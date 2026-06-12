@@ -1,4 +1,4 @@
-# Robusta_shade_tree
+# Coffee variety outweighs associated tree identity in shaping disease incidence and fruit load in a large-scale Ugandan Robusta agroforestry system
 
 ## Repository description
 
