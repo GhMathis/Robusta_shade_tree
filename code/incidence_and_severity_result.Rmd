@@ -437,7 +437,7 @@ MuMIn::dredge(global.model = full_berrie_model,
                           "cond(distance:Shade_tree_species)",
                           "cond(Section_of_kawerie)")) -> dd_shrub_incidence
 length(dd_shrub_incidence[[1]])
-
+dim(dd_shrub_incidence)
 subset(dd_shrub_incidence, delta < 4)
 plot(dd_shrub_incidence)
 data.frame(dd_shrub_incidence)
@@ -500,6 +500,56 @@ get_significance_letters2 <- function(contrast_df, alpha = 0.05, level_col1 = "L
 }
 ```
 
+```{r}
+# Function to get significance letters from a `hypotheses()` output (e.g. after
+# applying a multiple-comparison correction with `multcomp = "BH"`).
+# That object no longer carries a `contrast` column ("Clone B - Clone A", ...)
+# directly: the labels have to be recovered from the nested `comparisons`
+# object stored in its `marginaleffects` attribute (`@model$contrast`), which
+# keeps the same row order as `hyp_df` since `hypotheses()` only recomputes
+# the p-values/CIs in place and does not reorder or aggregate rows.
+get_significance_letters3 <- function(hyp_df, alpha = 0.05) {
+  # Recover the "Level1 - Level2" contrast labels
+  if ("contrast" %in% names(hyp_df)) {
+    contrast_labels <- hyp_df$contrast
+  } else {
+    contrast_labels <- attr(hyp_df, "marginaleffects")@model$contrast
+  }
+
+  if (is.null(contrast_labels) || length(contrast_labels) != nrow(hyp_df)) {
+    stop("Could not recover contrast labels matching the number of rows of `hyp_df`.")
+  }
+
+  # Extract levels
+  split_contrast <- contrast_labels %>% str_split(" - ", simplify = TRUE)
+  l1 <- split_contrast[,1]
+  l2 <- split_contrast[,2]
+
+  all_levels <- unique(c(l1, l2))
+  # Initialize an empty matrix of (already corrected) p-values
+  pmat <- matrix(NA, nrow = length(all_levels), ncol = length(all_levels),
+                 dimnames = list(all_levels, all_levels))
+
+  # Fill in the matrix with the corrected p-values
+  for (i in seq_len(nrow(hyp_df))) {
+    pval <- hyp_df$p.value[i]
+    pmat[l1[i], l2[i]] <- pval
+    pmat[l2[i], l1[i]] <- pval
+  }
+  # Generate letters using multcompView
+  comp <- multcompView::multcompLetters(pmat < alpha, compare = "<")$Letters
+
+  # Prepare output dataframe
+  output <- data.frame(
+    variable = factor(names(comp), levels = all_levels),
+    .group = comp,
+    stringsAsFactors = FALSE
+  )
+
+  return(output)
+}
+```
+
 
 
 ```{r}
@@ -514,15 +564,16 @@ marginaleffects::avg_predictions(
 marginaleffects::avg_comparisons(
   selected_model_shrub_incidence,
   variables = list(Coffee_Variety = "pairwise")
-) -> contrast_shrub_incidence_variety_df
+) %>%
+  marginaleffects::hypotheses(multcomp = "BH") -> contrast_shrub_incidence_variety_df
 
 # estimate_relation(mod_leaf_incidence_BES_leaves_top6, by = c("Coffee_Variety") ) -> BES_leaf_incidence_variety
-# 
+#
 # estimate_contrasts(BES_leaf_incidence_variety, contrast = c("Coffee_Variety"), p_adjust = "fdr") -> contrast_BES_leaf_incidence_variety_df
 # str(contrast_BES_leaf_incidence_variety_df)
 # contrast_BES_leaf_incidence_variety_df %>% str
 
-get_significance_letters2(contrast_shrub_incidence_variety_df) %>%
+get_significance_letters3(contrast_shrub_incidence_variety_df) %>%
   mutate(variable = factor(variable , levels = levels(data_shrub_incidence$Coffee_Variety))) %>%
   arrange(variable) %>%
   mutate(x= as.numeric(variable))-> compl_letter_shrub_incidence_var
@@ -822,6 +873,8 @@ MuMIn::dredge(global.model = full_model_BES_branch_incidence_disp_zif,
 
 length(dd_BES_branch_incidence_disp_zif[[1]])
 subset(dd_BES_branch_incidence_disp_zif, delta < 2)
+length(dd_BES_branch_incidence_disp_zif)
+
 ```
 
 ```{r}
@@ -877,15 +930,16 @@ marginaleffects::avg_comparisons(
   selected_model_shrub_incidence_BES,
   type= "response",
   variables = list(Coffee_Variety = "pairwise")
-) -> contrast_BES_leaf_incidence_variety_df
+) %>%
+  marginaleffects::hypotheses(multcomp = "BH") -> contrast_BES_leaf_incidence_variety_df
 
 # estimate_relation(mod_leaf_incidence_BES_leaves_top6, by = c("Coffee_Variety") ) -> BES_leaf_incidence_variety
-# 
+#
 # estimate_contrasts(BES_leaf_incidence_variety, contrast = c("Coffee_Variety"), p_adjust = "fdr") -> contrast_BES_leaf_incidence_variety_df
 # str(contrast_BES_leaf_incidence_variety_df)
 # contrast_BES_leaf_incidence_variety_df %>% str
 
-get_significance_letters2(contrast_BES_leaf_incidence_variety_df) %>%
+get_significance_letters3(contrast_BES_leaf_incidence_variety_df) %>%
   mutate(variable = factor(variable , levels = levels(BES_leaves_top$Coffee_Variety))) %>%
   arrange(variable) %>%
   mutate(x= as.numeric(variable))-> compl_letter_BES_leaf_incidence_var
@@ -1086,6 +1140,7 @@ for(i in 1:5){
 formula(MuMIn::get.models(dd_CLR_branch_incidence_disp_zi, 2)[[1]])
 formula(MuMIn::get.models(dd_CLR_branch_incidence_disp_zi, 3)[[1]])
 MuMIn::get.models(dd_CLR_branch_incidence_disp_zi, 3)[[1]] -> selected_model_shrub_incidence_CLR
+length(dd_CLR_branch_incidence_disp_zi)
 ```
 
 
@@ -1116,9 +1171,10 @@ marginaleffects::avg_predictions(
 marginaleffects::avg_comparisons(
   selected_model_shrub_incidence_CLR,
   variables = list(Coffee_Variety = "pairwise")
-) -> contrast_CLR_leaf_incidence_variety_df
+) %>%
+  marginaleffects::hypotheses(multcomp = "BH") -> contrast_CLR_leaf_incidence_variety_df
 
-get_significance_letters2(contrast_CLR_leaf_incidence_variety_df) %>%
+get_significance_letters3(contrast_CLR_leaf_incidence_variety_df) %>%
   mutate(variable = factor(variable , levels = levels(data_leaf_incidence_CLR$Coffee_Variety))) %>%
   arrange(variable) %>%
   mutate(x= as.numeric(variable))-> compl_letter_CLR_leaf_incidence_var

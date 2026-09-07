@@ -269,6 +269,7 @@ for(i in 1:5){
 ## Best model with correct residuals
 
 ```{r}
+str(dd_berrie$weight)
 formula(MuMIn::get.models(dd_berrie, 1)[[1]])
 formula(MuMIn::get.models(dd_berrie, 2)[[1]])
 ```
@@ -486,6 +487,56 @@ get_significance_letters2 <- function(contrast_df, alpha = 0.05, level_col1 = "L
 ```
 
 ```{r}
+# Function to get significance letters from a `hypotheses()` output (e.g. after
+# applying a multiple-comparison correction with `multcomp = "BH"`).
+# That object no longer carries a `contrast` column ("Clone B - Clone A", ...)
+# directly: the labels have to be recovered from the nested `comparisons`
+# object stored in its `marginaleffects` attribute (`@model$contrast`), which
+# keeps the same row order as `hyp_df` since `hypotheses()` only recomputes
+# the p-values/CIs in place and does not reorder or aggregate rows.
+get_significance_letters3 <- function(hyp_df, alpha = 0.05) {
+  # Recover the "Level1 - Level2" contrast labels
+  if ("contrast" %in% names(hyp_df)) {
+    contrast_labels <- hyp_df$contrast
+  } else {
+    contrast_labels <- attr(hyp_df, "marginaleffects")@model$contrast
+  }
+
+  if (is.null(contrast_labels) || length(contrast_labels) != nrow(hyp_df)) {
+    stop("Could not recover contrast labels matching the number of rows of `hyp_df`.")
+  }
+
+  # Extract levels
+  split_contrast <- contrast_labels %>% str_split(" - ", simplify = TRUE)
+  l1 <- split_contrast[,1]
+  l2 <- split_contrast[,2]
+
+  all_levels <- unique(c(l1, l2))
+  # Initialize an empty matrix of (already corrected) p-values
+  pmat <- matrix(NA, nrow = length(all_levels), ncol = length(all_levels),
+                 dimnames = list(all_levels, all_levels))
+
+  # Fill in the matrix with the corrected p-values
+  for (i in seq_len(nrow(hyp_df))) {
+    pval <- hyp_df$p.value[i]
+    pmat[l1[i], l2[i]] <- pval
+    pmat[l2[i], l1[i]] <- pval
+  }
+  # Generate letters using multcompView
+  comp <- multcompView::multcompLetters(pmat < alpha, compare = "<")$Letters
+
+  # Prepare output dataframe
+  output <- data.frame(
+    variable = factor(names(comp), levels = all_levels),
+    .group = comp,
+    stringsAsFactors = FALSE
+  )
+
+  return(output)
+}
+```
+
+```{r}
 #### Variety
 # Compute estimated mean for each variety
 marginaleffects::datagrid(model = selected_berrie_model, Coffee_Variety =c("Clone A", "Clone B", "Clone C", "Clone F", "Op1", "Op2") , grid_type = "counterfactual") -> datagrid_berrie_variety
@@ -501,9 +552,10 @@ marginaleffects::avg_comparisons(
   selected_berrie_model,
   variables = list(Coffee_Variety = "pairwise"),
   newdata = datagrid_berrie_variety
-) -> contrast_variety_df
+) %>%
+  marginaleffects::hypotheses(multcomp = "BH") -> contrast_variety_df
 
-get_significance_letters2(contrast_variety_df) %>%
+get_significance_letters3(contrast_variety_df) %>%
   mutate(variable = factor(variable , levels = levels(data_yield2$Coffee_Variety))) %>%
   arrange(variable) %>%
   mutate(x= as.numeric(variable))-> compl_letter_yield_var
